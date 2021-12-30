@@ -3,6 +3,7 @@ module Miraculix.Summary
   ) where
 
 import Prelude
+import Data.Foldable (fold)
 import Data.Monoid.Additive (Additive(..))
 import Data.Newtype (un)
 import Miraculix.Typo (fontColor, Color(..))
@@ -19,13 +20,16 @@ type Summary
 --------------------------------------------------------------------------------
 -- Destructors
 --------------------------------------------------------------------------------
-printSummary :: Summary -> Array String
+printSummary :: Summary -> String
 printSummary summary =
-  [ "Ran " <> show count <> " tests."
-  , "Successfull: " <> (fontColor Green $ show successes)
-  , "Failed: " <> (fontColor Red $ show failures)
-  ]
+  mkLines
+    $ [ "Ran " <> show count <> " tests."
+      , "Successfull: " <> (fontColor Green $ show successes)
+      , "Failed: " <> (fontColor Red $ show failures)
+      ]
   where
+  mkLines lines = fold $ (_ <> "\n") <$> lines
+
   count = un Additive summary.count
 
   failures = un Additive summary.failures

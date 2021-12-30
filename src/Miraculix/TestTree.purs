@@ -2,6 +2,7 @@ module Miraculix.TestTree
   ( testCase
   , testGroup
   , TestTree
+  , getSummary
   ) where
 
 import Prelude
@@ -31,8 +32,8 @@ testGroup name tests = TestGroup { name, tests }
 --------------------------------------------------------------------------------
 -- Destructors
 --------------------------------------------------------------------------------
-getSummary :: Int -> TestTree -> Summary
-getSummary depth (TestCase { name, assertion }) = traceLines depth log $ report
+getSummary' :: Int -> TestTree -> Summary
+getSummary' depth (TestCase { name, assertion }) = traceLines depth log $ report
   where
   isSuccess = A.isSuccess assertion
 
@@ -46,7 +47,7 @@ getSummary depth (TestCase { name, assertion }) = traceLines depth log $ report
     | isSuccess = { failures: pure 0, count: pure 1, log }
     | otherwise = { failures: pure 1, count: pure 1, log }
 
-getSummary depth (TestGroup { name, tests }) =
+getSummary' depth (TestGroup { name, tests }) =
   traceLines depth log
     $ here
     <> children
@@ -55,7 +56,10 @@ getSummary depth (TestGroup { name, tests }) =
 
   here = { failures: pure 0, count: pure 0, log }
 
-  children = fold $ getSummary (depth + 1) <$> tests
+  children = fold $ getSummary' (depth + 1) <$> tests
+
+getSummary :: TestTree -> Summary
+getSummary = getSummary' 0
 
 --------------------------------------------------------------------------------
 -- Utils
