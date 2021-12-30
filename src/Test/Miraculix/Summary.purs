@@ -1,5 +1,7 @@
 module Test.Miraculix.Summary
-  ( Summary, printSummary
+  ( Summary
+  , printSummaryFooter
+  , printSummary
   ) where
 
 import Prelude
@@ -20,18 +22,20 @@ type Summary
 --------------------------------------------------------------------------------
 -- Destructors
 --------------------------------------------------------------------------------
-printSummary :: Summary -> String
-printSummary summary =
-  mkLines
-    $ [ "Ran " <> show count <> " tests."
-      , "Successfull: " <> (fontColor Green $ show successes)
-      , "Failed: " <> (fontColor Red $ show failures)
-      ]
+printSummaryFooter :: Summary -> Array String
+printSummaryFooter summary =
+  [ fontColor color
+      $ show failures
+      <> " out of "
+      <> show count
+      <> " tests failed"
+  ]
   where
-  mkLines lines = fold $ (_ <> "\n") <$> lines
+  color = if failures == 0 then Green else Red
 
   count = un Additive summary.count
 
   failures = un Additive summary.failures
 
-  successes = count - failures
+printSummary :: Summary -> String
+printSummary summary = fold $ (_ <> "\n") <$> summary.log

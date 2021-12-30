@@ -20,9 +20,12 @@ newtype Assertion
 --------------------------------------------------------------------------------
 -- Constructors
 --------------------------------------------------------------------------------
+-- | Asserts that the specified condition holds.
 assert :: Boolean -> Array String -> Assertion
 assert result message = Assertion { result, message }
 
+-- | Asserts that the specified actual value is equal to the expected value
+-- | (with the actual value on the left-hand side).
 assertEq :: forall a. Show a => Eq a => a -> a -> Assertion
 assertEq actual expected =
   assert (actual == expected)
@@ -34,11 +37,13 @@ assertEq actual expected =
 
 infixr 1 assertEq as @?=
 
+-- | Asserts that the specified value is lower than another value
 assertLt :: forall a. Show a => Ord a => a -> a -> Assertion
 assertLt l r =
   assert (l < r)
     [ show l <> " is not lower than " <> show r ]
 
+-- | Asserts that the specified value is greater than another value
 assertGt :: forall a. Show a => Ord a => a -> a -> Assertion
 assertGt l r =
   assert (l > r)
