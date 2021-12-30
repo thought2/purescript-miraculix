@@ -1,5 +1,3 @@
-# !! STILL WORK IN PROGRESS !!
-
 # purescript-miraculix
 
 A testing framework for PureScript's purenix backend.
@@ -52,6 +50,8 @@ nix-build output/Test.Main/default.nix -A testReport
 You'll get the following output on the terminal:
 
 <img src="assets/test-output.png" />
+
+If you fix the tests, the derivation can be built. You'll find a report of the successful tests in the `result` symlink. E.g. try `cat result` to display the file.
 
 # Limitations
 
