@@ -7,6 +7,7 @@ module Test.Miraculix.FFI
   , foldl'
   , concatStringsSep
   , substring
+  , bullet
   , StorePath
   ) where
 
@@ -38,3 +39,5 @@ foreign import foldl' :: forall a b. (b -> a -> b) -> b -> Array a -> b
 foreign import concatStringsSep :: String -> Array String -> String
 
 foreign import substring :: Int -> Int -> String -> String
+
+foreign import bullet :: String

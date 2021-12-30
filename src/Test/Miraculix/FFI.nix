@@ -12,5 +12,8 @@ in
     concatStringsSep
     substring
     ;
+
   inherit mkReport;
+
+  bullet = "•";
 }

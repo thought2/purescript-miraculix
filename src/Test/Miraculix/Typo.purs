@@ -6,7 +6,7 @@ module Test.Miraculix.Typo
   ) where
 
 import Prelude
-import Test.Miraculix.FFI (substring)
+import Test.Miraculix.FFI (substring, bullet)
 
 --------------------------------------------------------------------------------
 -- Types
@@ -21,9 +21,9 @@ data Color
 --------------------------------------------------------------------------------
 toColorCode :: Color -> String
 toColorCode c = case c of
-  Red -> "" -- "\x001b[31m"
-  Green -> "" -- "\x001b[32m"
-  Yellow -> "" -- "\x001b[33m"
+  Red ->  "\x001b[31m"
+  Green -> "\x001b[32m"
+  Yellow -> "\x001b[33m"
 
 fontColor :: Color -> String -> String
 fontColor color txt = toColorCode color <> txt <> resetColor
@@ -31,11 +31,9 @@ fontColor color txt = toColorCode color <> txt <> resetColor
 --------------------------------------------------------------------------------
 -- Utils
 --------------------------------------------------------------------------------
-bullet :: String
-bullet = "\\x2022"
 
 resetColor :: String
-resetColor = "" -- "\x001b[0m"
+resetColor = "\x001b[0m"
 
 withBullet :: String -> String
 withBullet txt = bullet <> " " <> txt
