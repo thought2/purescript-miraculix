@@ -2,12 +2,10 @@ module Test.Main where
 
 import Prelude
 import Test.Miraculix (StorePath, TestTree, runTests, testCase, testGroup, (@?=))
+import Data.Array (sort)
 
 main :: StorePath
 main = runTests tests
-
-greeting :: String -> String
-greeting str = "Hello, " <> str <> "!"
 
 tests :: TestTree
 tests =
@@ -18,6 +16,6 @@ tests =
         ]
     , testGroup "Strings"
         [ testCase "concatenation" $ "Hello" <> "World!" @?= "HelloWorld!"
-        , testCase "greets the world" $ greeting "World" @?= "Hello, World!"
+        , testCase "greets the world" $ sort [ 2, 3, 1 ] @?= [ 1, 2, 3 ]
         ]
     ]

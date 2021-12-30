@@ -8,7 +8,9 @@ A testing framework for PureScript's purenix backend.
 
 Try the tasty magic potion!
 
-# API Docs
+# Docs
+
+# [API Documentation](https://thought2.github.io/purescript-miraculix/Test.Miraculix.html)
 
 # Example
 

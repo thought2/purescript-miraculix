@@ -21,7 +21,7 @@ data Color
 --------------------------------------------------------------------------------
 toColorCode :: Color -> String
 toColorCode c = case c of
-  Red ->  "\x001b[31m"
+  Red -> "\x001b[31m"
   Green -> "\x001b[32m"
   Yellow -> "\x001b[33m"
 
@@ -31,7 +31,6 @@ fontColor color txt = toColorCode color <> txt <> resetColor
 --------------------------------------------------------------------------------
 -- Utils
 --------------------------------------------------------------------------------
-
 resetColor :: String
 resetColor = "\x001b[0m"
 
