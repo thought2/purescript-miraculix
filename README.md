@@ -10,7 +10,7 @@ Try the tasty magic potion!
 
 # Docs
 
-# [API Documentation](https://thought2.github.io/purescript-miraculix/Test.Miraculix.html)
+[API Documentation](https://thought2.github.io/purescript-miraculix/Test.Miraculix.html)
 
 # Example
 
