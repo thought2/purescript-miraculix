@@ -1,6 +1,8 @@
-# STILL WORK IN PROGRESS
+# !! STILL WORK IN PROGRESS !!
 
-# purescript-purenix-miraculix
+# purescript-miraculix
+
+A testing framework for PureScript's purenix backend.
 
 <img src="miraculix.svg" height="250px"/>
 
@@ -23,8 +25,8 @@ import Miracolix (StorePath, TestTree, runTests, testCase, testGroup, (@?=))
 greeting :: String -> String
 greeting str = "Hello, " <> str <> "!"
 
-testReport :: StorePath
-testReport = runTests tests
+main :: StorePath
+main = runTests tests
 
 tests :: TestTree
 tests =

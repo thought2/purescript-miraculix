@@ -4,8 +4,8 @@ import Prelude
 import Test.Miraculix (StorePath, TestTree, runTests, testCase, testGroup, (@?=))
 import Lib (greeting)
 
-testReport :: StorePath
-testReport = runTests tests
+main :: StorePath
+main = runTests tests
 
 tests :: TestTree
 tests =

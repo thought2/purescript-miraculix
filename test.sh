@@ -1,1 +1,0 @@
-spago build && nix-build output/Test.Main -A main

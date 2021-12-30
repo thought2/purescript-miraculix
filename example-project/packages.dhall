@@ -9,7 +9,7 @@ let additions = {
     , "newtype"
     ]
   , repo = "https://github.com/thought2/purescript-miraculix.git"
-  , version = "master"
+  , version = "main"
   }
 }
 
