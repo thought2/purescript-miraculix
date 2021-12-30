@@ -1,4 +1,4 @@
-module Miraculix.Typo
+module Test.Miraculix.Typo
   ( withBullet
   , indent
   , fontColor
@@ -6,7 +6,7 @@ module Miraculix.Typo
   ) where
 
 import Prelude
-import Miraculix.FFI (substring)
+import Test.Miraculix.FFI (substring)
 
 --------------------------------------------------------------------------------
 -- Types

@@ -1,12 +1,12 @@
 { name = "purescript-arrays"
 , dependencies =
     [ "prelude"
-    , "foldable-traversable"
-    , "newtype"
+    , "miraculix"
     ]
 , backend = "purenix"
 , packages = ./packages.dhall
 , sources =
     [ "src/**/*.purs"
+    , "test/**/*.purs"
     ]
 }

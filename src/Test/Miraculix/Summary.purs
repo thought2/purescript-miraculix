@@ -1,4 +1,4 @@
-module Miraculix.Summary
+module Test.Miraculix.Summary
   ( Summary, printSummary
   ) where
 
@@ -6,7 +6,7 @@ import Prelude
 import Data.Foldable (fold)
 import Data.Monoid.Additive (Additive(..))
 import Data.Newtype (un)
-import Miraculix.Typo (fontColor, Color(..))
+import Test.Miraculix.Typo (fontColor, Color(..))
 
 --------------------------------------------------------------------------------
 -- Types

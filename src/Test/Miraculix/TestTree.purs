@@ -1,4 +1,4 @@
-module Miraculix.TestTree
+module Test.Miraculix.TestTree
   ( testCase
   , testGroup
   , TestTree
@@ -7,11 +7,11 @@ module Miraculix.TestTree
 
 import Prelude
 import Data.Foldable (fold)
-import Miraculix.Assertion (Assertion)
-import Miraculix.Assertion as A
-import Miraculix.Summary (Summary)
-import Miraculix.Typo (fontColor, indent, withBullet, Color(..))
-import Miraculix.FFI (foldl', trace)
+import Test.Miraculix.Assertion (Assertion)
+import Test.Miraculix.Assertion as A
+import Test.Miraculix.Summary (Summary)
+import Test.Miraculix.Typo (fontColor, indent, withBullet, Color(..))
+import Test.Miraculix.FFI (foldl', trace)
 
 --------------------------------------------------------------------------------
 -- Types

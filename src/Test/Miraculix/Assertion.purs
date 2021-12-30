@@ -1,4 +1,4 @@
-module Miraculix.Assertion
+module Test.Miraculix.Assertion
   ( Assertion
   , assertEq
   , assertLt
@@ -9,7 +9,7 @@ module Miraculix.Assertion
   ) where
 
 import Prelude
-import Miraculix.Typo (withBullet, fontColor, Color(..), indent)
+import Test.Miraculix.Typo (withBullet, fontColor, Color(..), indent)
 
 --------------------------------------------------------------------------------
 -- Types
