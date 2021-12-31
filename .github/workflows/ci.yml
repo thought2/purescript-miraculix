@@ -19,9 +19,6 @@ jobs:
       - name: Build
         run: nix develop --command spago build
 
-      - name: Test
-        run: nix develop --command bash test.sh
-
       - name: Generate docs
         run: nix develop --command spago docs
 
