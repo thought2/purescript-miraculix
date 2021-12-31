@@ -18,8 +18,10 @@ module Test.Main where
 import Prelude
 import Test.Miraculix (StorePath, TestTree, runTests, testCase, testGroup, (@?=))
 import Data.Array (sort)
+import Effect (Effect)
+import Test.Miraculix.FFI (trace, seq, deepSeq)
 
-main :: StorePath
+main :: Effect StorePath
 main = runTests tests
 
 tests :: TestTree
@@ -42,7 +44,7 @@ tests =
 
 ```bash
 spago build && \
-nix-build output/Test.Main/default.nix -A testReport
+nix-build -E '(import ./output/Test.Main).main null'
 ```
 
 You'll get the following output on the terminal:
