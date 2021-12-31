@@ -26,7 +26,7 @@ foreign import data StorePath :: Type
 --------------------------------------------------------------------------------
 -- Values
 --------------------------------------------------------------------------------
-foreign import abort :: forall a. String -> a
+foreign import abort :: String -> Effect Unit
 
 foreign import seq :: forall a b. a -> b -> b
 

@@ -6,13 +6,13 @@ in
   inherit (builtins)
     seq
     deepSeq
-    abort
     foldl'
     concatStringsSep
     substring
     ;
 
   trace = x: _: builtins.trace x null;
+  abort = x: _: builtins.abort x;
 
   inherit mkReport;
 

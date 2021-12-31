@@ -90,4 +90,5 @@ getSummary tt = do
   let
     footer = [ "" ] <> printSummaryFooter summary
   traverse_ trace footer
+  when (summary.failures /= pure 0) $ abort "Test suite failed"
   pure $ summary { log = summary.log <> footer }
