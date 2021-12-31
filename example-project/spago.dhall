@@ -1,4 +1,4 @@
-{ name = "purescript-miraculix"
+{ name = "purescript-miraculix-example-project"
 , dependencies =
     [ "prelude"
     , "miraculix"
