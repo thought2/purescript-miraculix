@@ -10,7 +10,7 @@ import Test.Miraculix.TestTree (TestTree, getSummary)
 -- Re-Export
 import Test.Miraculix.FFI (StorePath) as M
 import Test.Miraculix.TestTree (TestTree, testCase, testGroup) as M
-import Test.Miraculix.Assertion ((@?=)) as M
+import Test.Miraculix.Assertion ((@?=), assertEq, assertLt, assertGt, assert) as M
 
 -- | Run all tests in the test tree
 runTests :: TestTree -> StorePath
