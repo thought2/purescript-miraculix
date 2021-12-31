@@ -1,0 +1,9 @@
+- [ ] substring refactor
+- [ ] fix picture (mobile)
+- [x] add tasty reference
+- [x] add expected/actual log
+- [ ] change screenshot / text in tests 
+- [ ] add spell checker
+- [ ] publish version
+- [ ] refactor logging as Effect
+- [ ] refactor assertion with throw

@@ -42,7 +42,13 @@ getSummary' depth (TestCase { name, assertion }) = traceLines depth log $ report
   where
   isSuccess = A.isSuccess assertion
 
-  log = [ indent depth (withBullet $ name <> ": " <> result) ]
+  log = [ indent depth (withBullet $ name <> ": " <> result) ] <> logAssertion
+
+  logAssertion =
+    if isSuccess then
+      []
+    else
+      (indent (depth + 1) <$> A.message assertion)
 
   result
     | isSuccess = fontColor Green "ok"

@@ -15,7 +15,7 @@ tests =
         , testCase "muliplication" $ 3 * 4 @?= 11 -- will fail
         ]
     , testGroup "Strings"
-        [ testCase "greets the world" $ sort [ 2, 3, 1 ] @?= [ 1, 2, 3 ]
-        , testCase "greets the world" $ sort [ 2, 3, 1 ] @?= [ 1, 2 ] -- will fail
+        [ testCase "sorts a list of numbers" $ sort [ 2, 3, 1 ] @?= [ 1, 2, 3 ]
+        , testCase "sorts a list of characters" $ sort [ 'c', 'b', 'a' ] @?= [ 'a', 'b' ] -- will fail
         ]
     ]

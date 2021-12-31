@@ -6,6 +6,7 @@ module Test.Miraculix.Assertion
   , assert
   , isSuccess
   , (@?=)
+  , message
   ) where
 
 import Prelude
@@ -54,3 +55,6 @@ assertGt l r =
 --------------------------------------------------------------------------------
 isSuccess :: Assertion -> Boolean
 isSuccess (Assertion { result }) = result
+
+message :: Assertion -> Array String
+message (Assertion { message }) = message

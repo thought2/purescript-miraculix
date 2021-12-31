@@ -1,8 +1,8 @@
 # purescript-miraculix
 
-A testing framework for PureScript's purenix backend.
+A testing framework for PureScript's purenix backend. Inspired by Haskell's [tasty](https://github.com/UnkindPartition/tasty) library.
 
-<img src="assets/miraculix.svg" height="250px"/>
+<img src="assets/miraculix.svg" height="250px" style="margin-top: 20px; margin-bottom: 20px"/>
 
 # Docs
 
@@ -10,9 +10,7 @@ A testing framework for PureScript's purenix backend.
 
 # Example
 
-Define some tests like this:
-
-## `test/Main.purs`
+Define some tests like this, e.g. in a `test/Main.purs` file.
 
 ```haskell
 module Test.Main where
@@ -32,8 +30,8 @@ tests =
         , testCase "muliplication" $ 3 * 4 @?= 11 -- will fail
         ]
     , testGroup "Strings"
-        [ testCase "greets the world" $ sort [ 2, 3, 1 ] @?= [ 1, 2, 3 ]
-        , testCase "greets the world" $ sort [ 2, 3, 1 ] @?= [ 1, 2 ] -- will fail
+        [ testCase "sorts a list of numbers" $ sort [ 2, 3, 1 ] @?= [ 1, 2, 3 ]
+        , testCase "sorts a list of characters" $ sort [ 'c', 'b', 'a' ] @?= [ 'a', 'b' ] -- will fail
         ]
     ]
 ```
