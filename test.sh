@@ -1,2 +1,2 @@
 spago --config tests.dhall build && \
-nix-build output/Test.Main -A main
+nix-build -E '(import ./output/Test.Main).main null'

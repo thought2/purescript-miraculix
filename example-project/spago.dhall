@@ -2,6 +2,7 @@
 , dependencies =
     [ "prelude"
     , "miraculix"
+    , "effect"
     ]
 , backend = "purenix"
 , packages = ./packages.dhall

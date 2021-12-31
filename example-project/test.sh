@@ -1,1 +1,2 @@
-spago build && nix-build output/Test.Main -A main
+spago build && \
+nix-build -E '(import ./output/Test.Main).main null'

@@ -3,8 +3,9 @@ module Test.Main where
 import Prelude
 import Test.Miraculix (StorePath, TestTree, runTests, testCase, testGroup, (@?=))
 import Lib (greeting)
+import Effect (Effect)
 
-main :: StorePath
+main :: Effect StorePath
 main = runTests tests
 
 tests :: TestTree

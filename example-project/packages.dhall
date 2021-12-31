@@ -11,6 +11,13 @@ let additions = {
   , repo = "https://github.com/thought2/purescript-miraculix.git"
   , version = "main"
   }
+, effect = 
+  { dependencies =
+    [ "prelude"
+    ]
+  , repo = "https://github.com/thought2/purescript-effect.git"
+  , version = "main"
+  }
 }
 
 in  upstream // additions

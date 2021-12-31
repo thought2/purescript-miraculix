@@ -12,9 +12,10 @@ module Test.Miraculix.FFI
   ) where
 
 import Prelude
-import Data.Monoid.Additive (Additive(..))
 import Data.Foldable (fold)
+import Data.Monoid.Additive (Additive(..))
 import Data.Newtype (un)
+import Effect (Effect)
 
 --------------------------------------------------------------------------------
 -- Types
@@ -33,7 +34,7 @@ foreign import deepSeq :: forall a b. a -> b -> b
 
 foreign import mkReport :: String -> StorePath
 
-foreign import trace :: forall a b. a -> b -> b
+foreign import trace :: String -> Effect Unit
 
 foreign import foldl' :: forall a b. (b -> a -> b) -> b -> Array a -> b
 

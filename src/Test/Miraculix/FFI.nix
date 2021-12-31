@@ -8,10 +8,11 @@ in
     deepSeq
     abort
     foldl'
-    trace
     concatStringsSep
     substring
     ;
+
+  trace = x: _: builtins.trace x null;
 
   inherit mkReport;
 

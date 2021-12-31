@@ -4,14 +4,20 @@ module Test.Miraculix
   ) where
 
 import Prelude
-import Test.Miraculix.FFI (mkReport, StorePath)
+import Effect (Effect)
+import Test.Miraculix.Assertion ((@?=), assertEq, assertLt, assertGt, assert) as M
+import Test.Miraculix.FFI (StorePath) as M
+import Test.Miraculix.FFI (StorePath, mkReport, trace)
 import Test.Miraculix.Summary (printSummary)
 import Test.Miraculix.TestTree (TestTree, getSummary)
--- Re-Export
-import Test.Miraculix.FFI (StorePath) as M
 import Test.Miraculix.TestTree (TestTree, testCase, testGroup) as M
-import Test.Miraculix.Assertion ((@?=), assertEq, assertLt, assertGt, assert) as M
 
 -- | Run all tests in the test tree
-runTests :: TestTree -> StorePath
-runTests tt = mkReport $ printSummary $ getSummary tt
+runTests :: TestTree -> Effect StorePath
+runTests tt = do
+  summary <- getSummary tt
+  pure $ mkReport $ printSummary summary
+
+-- runTests :: Effect Unit
+-- runTests = do
+--   trace "hello"

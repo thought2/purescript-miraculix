@@ -6,12 +6,16 @@ module Test.Miraculix.TestTree
   ) where
 
 import Prelude
-import Data.Foldable (fold)
+import Data.Foldable (fold, traverse_)
+import Data.Foldable (foldM)
+import Data.Traversable (traverse)
+import Effect (Effect)
 import Test.Miraculix.Assertion (Assertion)
 import Test.Miraculix.Assertion as A
 import Test.Miraculix.FFI (foldl', trace, deepSeq, abort)
 import Test.Miraculix.Summary (Summary, printSummaryFooter)
 import Test.Miraculix.Typo (fontColor, indent, withBullet, Color(..))
+import Unsafe.Coerce (unsafeCoerce)
 
 --------------------------------------------------------------------------------
 -- Types
@@ -20,8 +24,14 @@ import Test.Miraculix.Typo (fontColor, indent, withBullet, Color(..))
 -- | It consists of individual test cases and properties, organized in named
 -- | groups which form a tree-like hierarchy. 
 data TestTree
-  = TestCase { name :: String, assertion :: Assertion }
-  | TestGroup { name :: String, tests :: Array TestTree }
+  = TestCase TestCase'
+  | TestGroup TestGroup'
+
+type TestCase'
+  = { name :: String, assertion :: Assertion }
+
+type TestGroup'
+  = { name :: String, tests :: Array TestTree }
 
 --------------------------------------------------------------------------------
 -- Constructors
@@ -37,58 +47,47 @@ testGroup name tests = TestGroup { name, tests }
 --------------------------------------------------------------------------------
 -- Destructors
 --------------------------------------------------------------------------------
-getSummary' :: Int -> TestTree -> Summary
-getSummary' depth (TestCase { name, assertion }) = traceLines depth log $ report
+mkTestCaseLog :: TestCase' -> Array String
+mkTestCaseLog { name, assertion }
+  | A.isSuccess assertion =
+    [ withBullet
+        (name <> ": " <> fontColor Green "ok")
+    ]
+
+mkTestCaseLog { name, assertion }
+  | otherwise =
+    [ withBullet (name <> ": " <> fontColor Red "failed") ]
+      <> (indent 1 <$> A.message assertion)
+
+mkTestGroupLog :: TestGroup' -> Array String
+mkTestGroupLog { name } = [ name ]
+
+getSummary' :: Int -> TestTree -> Effect Summary
+getSummary' depth (TestCase testCase) = do
+  traverse_ trace log
+  pure $ report
   where
-  isSuccess = A.isSuccess assertion
+  isSuccess = A.isSuccess testCase.assertion
 
-  log = [ indent depth (withBullet $ name <> ": " <> result) ] <> logAssertion
-
-  logAssertion =
-    if isSuccess then
-      []
-    else
-      (indent (depth + 1) <$> A.message assertion)
-
-  result
-    | isSuccess = fontColor Green "ok"
-    | otherwise = fontColor Red "failure"
+  log = indent depth <$> mkTestCaseLog testCase
 
   report
     | isSuccess = { failures: pure 0, count: pure 1, log }
     | otherwise = { failures: pure 1, count: pure 1, log }
 
-getSummary' depth (TestGroup { name, tests }) =
-  traceLines depth log
-    $ here
-    <> children
+getSummary' depth (TestGroup testGroup') = do
+  traverse_ trace log
+  children <- fold <$> traverse (getSummary' (depth + 1)) testGroup'.tests
+  pure (here <> children)
   where
-  log = [ indent depth $ withBullet name ]
+  log = indent depth <$> mkTestGroupLog testGroup'
 
   here = { failures: pure 0, count: pure 0, log }
 
-  children = fold $ getSummary' (depth + 1) <$> tests
-
-getSummary :: TestTree -> Summary
-getSummary tt =
-  if isSuccess then
-    summary'
-  else
-    deepSeq summary' (abort "Test suite failed")
-  where
-  footer = traceLines 0 ([ "" ] <> printSummaryFooter summary <> [ "" ]) $ printSummaryFooter summary
-
-  summary = traceLines 0 [ "" ] $ getSummary' 0 tt
-
-  isSuccess = summary.failures == pure 0
-
-  summary' = summary { log = summary.log <> [ "" ] <> footer }
-
---------------------------------------------------------------------------------
--- Utils
---------------------------------------------------------------------------------
-traceLines :: forall a. Int -> Array String -> a -> a
-traceLines depth lines val =
-  foldl' (\m x -> trace x m) val
-    $ indent depth
-    <$> lines
+getSummary :: TestTree -> Effect Summary
+getSummary tt = do
+  summary <- getSummary' 0 tt
+  let
+    footer = [ "" ] <> printSummaryFooter summary
+  traverse_ trace footer
+  pure $ summary { log = summary.log <> footer }
