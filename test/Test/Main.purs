@@ -12,10 +12,12 @@ tests =
   testGroup "Lib functions"
     [ testGroup "Math"
         [ testCase "addition" $ 1 + 1 @?= 2
-        , testCase "muliplication" $ 3 * 4 @?= 11 -- will fail
+        -- will fail:
+        , testCase "muliplication" $ 3 * 4 @?= 11
         ]
     , testGroup "Strings"
         [ testCase "sorts a list of numbers" $ sort [ 2, 3, 1 ] @?= [ 1, 2, 3 ]
+        -- will fail:
         , testCase "sorts a list of characters" $ sort [ 'c', 'b', 'a' ] @?= [ 'a', 'b' ] -- will fail
         ]
     ]
