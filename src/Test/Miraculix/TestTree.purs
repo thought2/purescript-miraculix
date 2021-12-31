@@ -60,7 +60,7 @@ mkTestCaseLog { name, assertion }
       <> (indent 1 <$> A.message assertion)
 
 mkTestGroupLog :: TestGroup' -> Array String
-mkTestGroupLog { name } = [ name ]
+mkTestGroupLog { name } = [ withBullet name ]
 
 getSummary' :: Int -> TestTree -> Effect Summary
 getSummary' depth (TestCase testCase) = do
