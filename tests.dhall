@@ -1,4 +1,4 @@
-{ name = "purescript-miraculix"
+{ name = "purescript-miraculix-tests"
 , dependencies =
     [ "prelude"
     , "foldable-traversable"
@@ -9,5 +9,6 @@
 , packages = ./packages.dhall
 , sources =
     [ "src/**/*.purs"
+    , "test/**/*.purs"
     ]
 }
