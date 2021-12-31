@@ -1,12 +1,12 @@
 # purescript-miraculix
 
-A testing framework for PureScript's purenix backend. Inspired by Haskell's [tasty](https://github.com/UnkindPartition/tasty) library.
+A testing framework for PureScript's [purenix](https://github.com/purenix-org/purenix) backend. Inspired by Haskell's [tasty](https://github.com/UnkindPartition/tasty) library.
 
 <img src="assets/miraculix.svg" height="250px" style="margin-top: 20px; margin-bottom: 20px"/>
 
 # Docs
 
-[API Documentation](https://thought2.github.io/purescript-miraculix/Test.Miraculix.html)
+- [API Documentation](https://thought2.github.io/purescript-miraculix/Test.Miraculix.html)
 
 # Example
 
