@@ -17,10 +17,10 @@ jobs:
           nix_path: nixpkgs=channel:nixos-unstable
 
       - name: Build
-        run: nix develop --command spago build
+        run: nix develop --command make build
 
       - name: Generate docs
-        run: nix develop --command spago docs
+        run: nix develop --command make docs
 
       - name: Deploy Docs to GH Pages
         uses: JamesIves/github-pages-deploy-action@4.1.7
