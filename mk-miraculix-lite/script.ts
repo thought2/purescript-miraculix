@@ -20,6 +20,17 @@ const moduleScope = "LocalDependency";
 
 const packageExceptions = ["prelude", "newtype", "orders"];
 
+const newSpagoDhall = `
+{ name = "purescript-miraculix-lite"
+, dependencies = [ ${packageExceptions.map((x) => `"${x}"`).join(",")} ]
+, backend = "purenix"
+, packages = ./packages.dhall
+, sources =
+    [ "src/**/*.purs"
+    ]
+}
+`;
+
 const copySources = async () => {
   await fs.rm(TARGET_DIR, { recursive: true, force: true });
   await fs.mkdir(TARGET_DIR);
@@ -67,7 +78,7 @@ const cloneRepos = async (deps: Dep[]) => {
     await fs.mkdirp(path.join(TARGET_DIR, "deps"));
     await fs.copy(
       path.join(tmp, "src"),
-      path.join(TARGET_DIR, "deps", dep.packageName),
+      path.join(TARGET_DIR, "src", "deps", dep.packageName),
       { recursive: true }
     );
 
@@ -76,7 +87,7 @@ const cloneRepos = async (deps: Dep[]) => {
 };
 
 const patchDependencySources = async (): Promise<ModuleMapping> => {
-  const depModuleFiles = glob.sync(path.join(TARGET_DIR, "deps/**/*.purs"));
+  const depModuleFiles = glob.sync(path.join(TARGET_DIR, "src/deps/**/*.purs"));
 
   let moduleMapping: ModuleMapping = {};
 
@@ -98,10 +109,7 @@ const patchDependencySources = async (): Promise<ModuleMapping> => {
 };
 
 const patchLocalSources = async (moduleMapping: ModuleMapping) => {
-  const moduleFiles = [
-    ...glob.sync(path.join(TARGET_DIR, "src/**/*.purs")),
-    ...glob.sync(path.join(TARGET_DIR, "deps/**/*.purs")),
-  ];
+  const moduleFiles = [...glob.sync(path.join(TARGET_DIR, "src/**/*.purs"))];
 
   for (let moduleFile of moduleFiles) {
     const oldSource = (await fs.readFile(moduleFile)).toString();
@@ -132,17 +140,5 @@ const main = async () => {
   const moduleMapping = await patchDependencySources();
   await patchLocalSources(moduleMapping);
 };
-
-const newSpagoDhall = `
-{ name = "purescript-miraculix-lite"
-, dependencies = [ ${packageExceptions.map((x) => `"${x}"`).join(",")} ]
-, backend = "purenix"
-, packages = ./packages.dhall
-, sources =
-    [ "src/**/*.purs"
-    , "deps/**/*.purs"
-    ]
-}
-`;
 
 main();
