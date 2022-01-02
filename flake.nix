@@ -15,9 +15,17 @@
             overlay
           ];
         };
+
       in
       {
-        devShell = purenix.devShells.${system}.use-purenix;
+        devShell = pkgs.mkShell {
+          nativeBuildInputs = [
+            purenix.defaultPackage.${system}
+            pkgs.purescript
+            pkgs.spago
+            pkgs.nodePackages.purescript-psa
+          ];
+        };
       }
     );
 }
