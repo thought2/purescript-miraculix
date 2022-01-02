@@ -5,6 +5,5 @@
 , packages = ./packages.dhall
 , sources =
     [ "src/**/*.purs"
-    , "deps/**/*.purs"
     ]
 }
