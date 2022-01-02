@@ -21,7 +21,7 @@ const moduleScope = "LocalDependency";
 const packageExceptions = ["prelude", "newtype", "orders"];
 
 const copySources = async () => {
-  await fs.rmdir(TARGET_DIR, { recursive: true });
+  await fs.rm(TARGET_DIR, { recursive: true, force: true });
   await fs.mkdir(TARGET_DIR);
   await fs.copy(path.join(REPO_ROOT, "src"), path.join(TARGET_DIR, "src"), {
     recursive: true,
