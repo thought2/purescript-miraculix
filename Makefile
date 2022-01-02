@@ -9,3 +9,6 @@ build_: build
 
 docs:
 	spago docs
+
+buildLite:
+	ts-node mk-miraculix-lite/script.ts
