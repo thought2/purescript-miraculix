@@ -7,7 +7,7 @@ import Prelude
 import Effect (Effect)
 import Test.Miraculix.Assertion ((@?=), assertEq, assertLt, assertGt, assert) as M
 import Test.Miraculix.FFI (StorePath) as M
-import Test.Miraculix.FFI (StorePath, mkReport, trace)
+import Test.Miraculix.FFI (StorePath, mkReport)
 import Test.Miraculix.Summary (printSummary)
 import Test.Miraculix.TestTree (TestTree, getSummary)
 import Test.Miraculix.TestTree (TestTree, testCase, testGroup) as M
@@ -17,7 +17,3 @@ runTests :: TestTree -> Effect StorePath
 runTests tt = do
   summary <- getSummary tt
   pure $ mkReport $ printSummary summary
-
--- runTests :: Effect Unit
--- runTests = do
---   trace "hello"

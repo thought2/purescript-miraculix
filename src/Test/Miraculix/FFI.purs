@@ -12,9 +12,6 @@ module Test.Miraculix.FFI
   ) where
 
 import Prelude
-import Data.Foldable (fold)
-import Data.Monoid.Additive (Additive(..))
-import Data.Newtype (un)
 import Effect (Effect)
 
 --------------------------------------------------------------------------------

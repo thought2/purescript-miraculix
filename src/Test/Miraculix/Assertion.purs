@@ -23,7 +23,7 @@ newtype Assertion
 --------------------------------------------------------------------------------
 -- | Asserts that the specified condition holds.
 assert :: Boolean -> Array String -> Assertion
-assert result message = Assertion { result, message }
+assert result message' = Assertion { result, message: message' }
 
 -- | Asserts that the specified actual value is equal to the expected value
 -- | (with the actual value on the left-hand side).
@@ -57,4 +57,4 @@ isSuccess :: Assertion -> Boolean
 isSuccess (Assertion { result }) = result
 
 message :: Assertion -> Array String
-message (Assertion { message }) = message
+message (Assertion { message: message' }) = message'

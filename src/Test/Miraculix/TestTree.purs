@@ -7,15 +7,13 @@ module Test.Miraculix.TestTree
 
 import Prelude
 import Data.Foldable (fold, traverse_)
-import Data.Foldable (foldM)
 import Data.Traversable (traverse)
 import Effect (Effect)
 import Test.Miraculix.Assertion (Assertion)
 import Test.Miraculix.Assertion as A
-import Test.Miraculix.FFI (foldl', trace, deepSeq, abort)
+import Test.Miraculix.FFI (abort, trace)
 import Test.Miraculix.Summary (Summary, printSummaryFooter)
 import Test.Miraculix.Typo (fontColor, indent, withBullet, Color(..))
-import Unsafe.Coerce (unsafeCoerce)
 
 --------------------------------------------------------------------------------
 -- Types
@@ -63,13 +61,13 @@ mkTestGroupLog :: TestGroup' -> Array String
 mkTestGroupLog { name } = [ withBullet name ]
 
 getSummary' :: Int -> TestTree -> Effect Summary
-getSummary' depth (TestCase testCase) = do
+getSummary' depth (TestCase tc) = do
   traverse_ trace log
   pure $ report
   where
-  isSuccess = A.isSuccess testCase.assertion
+  isSuccess = A.isSuccess tc.assertion
 
-  log = indent depth <$> mkTestCaseLog testCase
+  log = indent depth <$> mkTestCaseLog tc
 
   report
     | isSuccess = { failures: pure 0, count: pure 1, log }
