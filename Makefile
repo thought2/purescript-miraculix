@@ -14,4 +14,4 @@ install:
 	cd mk-miraculix-lite; yarn install
 
 buildLite:
-	ts-node mk-miraculix-lite/script.ts
+	yarn --cwd mk-miraculix-lite/ run ts-node script.ts
