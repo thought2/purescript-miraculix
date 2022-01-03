@@ -75,7 +75,6 @@ const cloneRepos = async (deps: Dep[]) => {
       stdio: "inherit",
       cwd: tmp,
     });
-    await fs.mkdirp(path.join(TARGET_DIR, "deps"));
     await fs.copy(
       path.join(tmp, "src"),
       path.join(TARGET_DIR, "src", "deps", dep.packageName),
