@@ -7,22 +7,24 @@ module Test.Miraculix.Classless
 import Prelude
 import Test.Miraculix as M
 import Test.Miraculix (testCase, testGroup, runTests) as Exp
+import Foreign (Foreign)
 
 foreign import nixEq :: forall a. a -> a -> Boolean
 
-foreign import nixShow :: forall a. a -> String
+newtype Val
+  = Val Foreign
 
-newtype Val a
-  = Val a
-
-instance eqVal :: Eq (Val a) where
+instance eqVal :: Eq Val where
   eq = nixEq
 
-instance showVal :: Show (Val a) where
-  show = nixShow
+instance showVal :: Show Val where
+  show (Val fo) = nixShow fo
 
-assertEq :: forall a. Val a -> Val a -> M.Assertion
+assertEq :: Val -> Val -> M.Assertion
 assertEq = M.assertEq
+
+nixShow :: Foreign -> String
+nixShow _ = ""
 
 -- toStr :: Foreign -> String
 -- toStr =
