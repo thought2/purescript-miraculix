@@ -9,3 +9,4 @@ package-lock.json
 /output/
 result
 /generated-docs
+node_modules/
