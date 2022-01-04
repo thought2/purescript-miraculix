@@ -1,3 +1,6 @@
 {
-  "packages": "pkgs-ts/**/*"
+  "private": true,
+  "workspaces": [
+    "pkgs-ts/*"
+  ]
 }

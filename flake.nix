@@ -12,7 +12,9 @@
   outputs = { self, nixpkgs, flake-utils, purenix, easy-purescript-nix-source }:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        overlay = self: _: { };
+        overlay = self: _: {
+          purenix = purenix.defaultPackage.${system};
+        };
         pkgs = import nixpkgs {
           inherit system;
           overlays = [
@@ -28,11 +30,13 @@
 
         devShell = pkgs.mkShell {
           nativeBuildInputs = [
-            purenix.defaultPackage.${system}
+            pkgs.purenix
             easy-purescript-nix.spago2nix
             pkgs.purescript
             pkgs.spago
             pkgs.nodePackages.purescript-psa
+            pkgs.dhall-json
+            pkgs.nix-prefetch-git
           ];
         };
       }

@@ -12,6 +12,6 @@
   , "tuples"
   ]
 , backend = "purenix"
-, packages = ./packages.dhall
+, packages = ./packages-locked.dhall
 , sources = [ "src/**/*.purs" ]
 }

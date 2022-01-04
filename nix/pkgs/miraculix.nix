@@ -27,8 +27,7 @@ let
       ];
 
       unpackPhase = ''
-        cp ${../..}/{packages,spago}.dhall .
-        cp -r $src/src .
+        cp -r $src .
         install-spago-style
       '';
 
@@ -45,7 +44,7 @@ let
     };
 
   defaultNix = pkgs.writeText "default.nix" ''
-    import ./output/Main/default.nix
+    import ./output/Test.Miraculix/default.nix
   '';
 
 in

@@ -22,3 +22,6 @@ run-nix-example:
 tests:
 	spago build --config tests.dhall && \
 	nix-build -E '(import ./output/Test.Main/default.nix).main null'
+
+lockPkgs:
+	yarn workspace lock-pkgs ts-node src/index.ts
