@@ -14,3 +14,7 @@ build_: build
 
 docs:
 	spago docs
+
+run-nix-example: build
+run-nix-example:
+	nix-build nix-example/test.nix
