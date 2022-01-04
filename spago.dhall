@@ -1,16 +1,10 @@
-{ name = "purescript-miraculix"
-, dependencies =
-  [ "prelude"
-  , "foldable-traversable"
-  , "newtype"
-  , "effect"
-  , "foreign"
-  , "foreign-object"
-  , "foreign-path"
-  , "partial"
-  , "unsafe-coerce"
-  ]
-, backend = "purenix"
-, packages = ./packages.dhall
-, sources = [ "src/**/*.purs" ]
-}
+let lib = ./lib.dhall
+
+let tests = ./tests.dhall
+
+in  { name = "purescript-miraculix-dev"
+    , dependencies = lib.dependencies # tests.dependencies
+    , backend = lib.backend
+    , packages = lib.packages
+    , sources = lib.sources # tests.sources
+    }

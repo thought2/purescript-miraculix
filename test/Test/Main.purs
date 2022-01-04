@@ -1,25 +1,15 @@
 module Test.Main where
 
 import Prelude
-import Test.Miraculix (StorePath, TestTree, runTests, testCase, testGroup, (@?=))
+import Test.MiraculixLite (StorePath, TestTree, runTests, testCase, testGroup, (@?=))
 import Data.Array (sort)
-import Effect (Effect)
-import Test.Miraculix.FFI (trace, seq, deepSeq)
+import Test.MiraculixLite.FFI (trace, seq, deepSeq)
+import Tests.Test.Miraculix.Classless as Tests.Test.Miraculix.Classless
 
-main :: Effect StorePath
 main = runTests tests
 
 tests :: TestTree
 tests =
-  testGroup "Lib functions"
-    [ testGroup "Math"
-        [ testCase "addition" $ 1 + 1 @?= 2
-        -- will fail:
-        , testCase "muliplication" $ 3 * 4 @?= 11
-        ]
-    , testGroup "Strings"
-        [ testCase "sorts a list of numbers" $ sort [ 2, 3, 1 ] @?= [ 1, 2, 3 ]
-        -- will fail:
-        , testCase "sorts a list of characters" $ sort [ 'c', 'b', 'a' ] @?= [ 'a', 'b' ]
-        ]
+  testGroup "miraculix"
+    [ Tests.Test.Miraculix.Classless.tests
     ]

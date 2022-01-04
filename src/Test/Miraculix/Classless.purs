@@ -1,14 +1,17 @@
 module Test.Miraculix.Classless
   ( assertEq
   , module Exp
+  , nixShow
   , Val
   ) where
 
 import Prelude
 import Data.Foldable (intercalate)
+import Data.Tuple.Nested ((/\))
 import Foreign (Foreign)
 import Foreign as F
 import Foreign.Object (Object)
+import Foreign.Object as O
 import Foreign.Path (Path)
 import Partial.Unsafe (unsafePartial)
 import Test.Miraculix (testCase, testGroup, runTests) as Exp
@@ -32,7 +35,7 @@ assertEq = M.assertEq
 nixShow :: Foreign -> String
 nixShow =
   caseForeign
-    (\_ -> "")
+    showAttrSet
     show
     (\_ -> "")
     show
@@ -41,6 +44,14 @@ nixShow =
     (\xs -> "[ " <> (intercalate " " $ nixShow <$> xs) <> " ]")
     (\_ -> "null")
     show
+  where
+  showAttrSet :: Object Foreign -> String
+  showAttrSet o =
+    "{ "
+      <> (intercalate "" $ showAttr <$> O.toArrayWithKey (/\) o)
+      <> "}"
+
+  showAttr (k /\ v) = k <> " = " <> nixShow v <> "; "
 
 caseForeign ::
   forall a.

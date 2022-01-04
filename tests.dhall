@@ -1,16 +1,8 @@
-{ name = "purescript-miraculix-tests"
-, dependencies =
-    [ "prelude"
-    , "foldable-traversable"
-    , "newtype"
-    , "arrays"
-    , "effect"
-    , "unsafe-coerce"
-    ]
-, backend = "purenix"
-, packages = ./packages.dhall
-, sources =
-    [ "src/**/*.purs"
-    , "test/**/*.purs"
-    ]
-}
+let lib = ./lib.dhall
+
+in  { name = "purescript-miraculix-tests"
+    , dependencies = lib.dependencies # [ "miraculix-lite", "arrays", "tuples" ]
+    , backend = "purenix"
+    , packages = ./packages.dhall
+    , sources = lib.sources # [ "test/**/*.purs" ]
+    }
