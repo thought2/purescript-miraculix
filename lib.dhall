@@ -9,6 +9,7 @@
   , "foreign-path"
   , "partial"
   , "unsafe-coerce"
+  , "tuples"
   ]
 , backend = "purenix"
 , packages = ./packages.dhall

@@ -40,5 +40,13 @@ tests =
             [ testCase "double single ticks" $ C.nixShow (eval "''foo''") @?= "\\\"foo\\\""
             , testCase "double ticks" $ C.nixShow (eval "\\\"foo\\\"") @?= "\\\"foo\\\""
             ]
+        , testGroup "nested"
+            [ testCase "attrs with lists"
+                $ C.nixShow (eval "{ x = [ 1 2 3 ]; y = { z = [ 1 2 3 ]; }; }")
+                @?= "{ x = [ 1 2 3 ]; y = { z = [ 1 2 3 ]; }; }"
+            , testCase "lists with lists"
+                $ C.nixShow (eval "[ [ 1 2 3 ] [ 1 2 3 ] ]")
+                @?= "[ [ 1 2 3 ] [ 1 2 3 ] ]"
+            ]
         ]
     ]

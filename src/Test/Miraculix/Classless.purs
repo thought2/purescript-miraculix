@@ -40,10 +40,10 @@ nixShow =
     show
     P.toString
     show
-    (\_ -> "<function>")
+    showFunction
     show
     showList
-    (\_ -> "null")
+    showNull
     show
   where
   showAttrSet :: Object Foreign -> String
@@ -58,6 +58,10 @@ nixShow =
   showList xs = "[ " <> (intercalate "" $ showListItem <$> xs) <> "]"
 
   showListItem x = nixShow x <> " "
+
+  showFunction _ = "<function>"
+
+  showNull _ = "null"
 
 caseForeign ::
   forall a.
