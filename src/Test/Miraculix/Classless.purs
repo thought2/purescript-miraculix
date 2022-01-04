@@ -13,6 +13,7 @@ import Foreign as F
 import Foreign.Object (Object)
 import Foreign.Object as O
 import Foreign.Path (Path)
+import Foreign.Path as P
 import Partial.Unsafe (unsafePartial)
 import Test.Miraculix (testCase, testGroup, runTests) as Exp
 import Test.Miraculix as M
@@ -37,11 +38,11 @@ nixShow =
   caseForeign
     showAttrSet
     show
-    (\_ -> "")
+    P.toString
     show
     (\_ -> "<function>")
     show
-    (\xs -> "[ " <> (intercalate " " $ nixShow <$> xs) <> " ]")
+    showList
     (\_ -> "null")
     show
   where
@@ -52,6 +53,11 @@ nixShow =
       <> "}"
 
   showAttr (k /\ v) = k <> " = " <> nixShow v <> "; "
+
+  showList :: Array Foreign -> String
+  showList xs = "[ " <> (intercalate "" $ showListItem <$> xs) <> "]"
+
+  showListItem x = nixShow x <> " "
 
 caseForeign ::
   forall a.
