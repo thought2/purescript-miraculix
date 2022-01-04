@@ -1,6 +1,5 @@
 import * as fs from "fs-extra";
 import * as path from "path";
-import * as cp from "child_process";
 import spawnAsync from "@expo/spawn-async";
 import * as os from "os";
 import * as glob from "glob";
@@ -104,7 +103,10 @@ const patchDependencySources = async (): Promise<ModuleMapping> => {
     await fs.writeFile(depModuleFile, newSource);
   }
 
-  return moduleMapping;
+  return {
+    "Test.Miraculix": "Test.MiraculixLite",
+    ...moduleMapping,
+  };
 };
 
 const patchLocalSources = async (moduleMapping: ModuleMapping) => {
