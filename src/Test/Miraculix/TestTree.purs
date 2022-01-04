@@ -1,4 +1,4 @@
-module Test.Miraculix.TestTree
+module Test.MiraculixLite.TestTree
   ( testCase
   , testGroup
   , TestTree
@@ -9,11 +9,11 @@ import Prelude
 import LocalDependency.Data.Foldable (fold, traverse_)
 import LocalDependency.Data.Traversable (traverse)
 import LocalDependency.Effect (Effect)
-import Test.Miraculix.Assertion (Assertion)
-import Test.Miraculix.Assertion as A
-import Test.Miraculix.FFI (abort, trace)
-import Test.Miraculix.Summary (Summary, printSummaryFooter)
-import Test.Miraculix.Typo (fontColor, indent, withBullet, Color(..))
+import Test.MiraculixLite.Assertion (Assertion)
+import Test.MiraculixLite.Assertion as A
+import Test.MiraculixLite.FFI (abort, trace)
+import Test.MiraculixLite.Summary (Summary, printSummaryFooter)
+import Test.MiraculixLite.Typo (fontColor, indent, withBullet, Color(..))
 
 --------------------------------------------------------------------------------
 -- Types

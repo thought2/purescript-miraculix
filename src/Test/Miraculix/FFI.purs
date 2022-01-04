@@ -1,4 +1,4 @@
-module Test.Miraculix.FFI
+module Test.MiraculixLite.FFI
   ( abort
   , seq
   , deepSeq

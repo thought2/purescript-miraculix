@@ -1,4 +1,4 @@
-module Test.Miraculix.Summary
+module Test.MiraculixLite.Summary
   ( Summary
   , printSummaryFooter
   , printSummary
@@ -8,7 +8,7 @@ import Prelude
 import LocalDependency.Data.Foldable (fold)
 import Data.Monoid.Additive (Additive(..))
 import Data.Newtype (un)
-import Test.Miraculix.Typo (fontColor, Color(..))
+import Test.MiraculixLite.Typo (fontColor, Color(..))
 
 --------------------------------------------------------------------------------
 -- Types
