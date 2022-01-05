@@ -25,3 +25,14 @@ tests:
 
 lockPkgs:
 	yarn workspace lock-pkgs ts-node src/index.ts
+
+bundle:
+	yarn workspace bundle-nix ts-node src/index.ts
+	
+install:
+	yarn install
+
+materialize: clean
+materialize: install
+materialize: build
+materialize: bundle
