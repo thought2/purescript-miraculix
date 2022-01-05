@@ -38,4 +38,4 @@ materialize: build
 materialize: bundle
 
 check-status:
-	bash scripts/check-git/status.sh
+	bash scripts/check-git-status.sh
