@@ -36,3 +36,6 @@ materialize: clean
 materialize: install
 materialize: build
 materialize: bundle
+
+check-status:
+	bash scripts/check-git/status.sh
