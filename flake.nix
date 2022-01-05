@@ -26,7 +26,7 @@
 
       in
       {
-        defaultPackage = (import ./materialized/bundle.nix).Test-Miraculix-Classless_default-nix;
+        defaultPackage = import ./materialized/bundle.nix;
 
         devShell = pkgs.mkShell {
           nativeBuildInputs = [
