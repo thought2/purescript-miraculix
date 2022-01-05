@@ -24,9 +24,12 @@
 
         easy-purescript-nix = import easy-purescript-nix-source { inherit pkgs; };
 
+        bundle = import ./materialized/bundle.nix;
       in
       {
-        defaultPackage = import ./materialized/bundle.nix;
+        defaultPackage = bundle;
+
+        packages.nix-miraculix = bundle.Test-Miraculix-Nix_default-nix;
 
         devShell = pkgs.mkShell {
           nativeBuildInputs = [

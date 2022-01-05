@@ -1,8 +1,6 @@
-module Test.Miraculix.Classless
+module Test.Miraculix.Nix.Internal
   ( assertEq
-  , module Exp
   , nixShow
-  , Val
   ) where
 
 import Prelude
@@ -15,7 +13,6 @@ import Foreign.Object as O
 import Foreign.Path (Path)
 import Foreign.Path as P
 import Partial.Unsafe (unsafePartial)
-import Test.Miraculix (testCase, testGroup, runTests) as Exp
 import Test.Miraculix as M
 import Unsafe.Coerce (unsafeCoerce)
 
@@ -30,8 +27,8 @@ instance eqVal :: Eq Val where
 instance showVal :: Show Val where
   show (Val fo) = nixShow fo
 
-assertEq :: Val -> Val -> M.Assertion
-assertEq = M.assertEq
+assertEq :: Foreign -> Foreign -> M.Assertion
+assertEq x y = M.assertEq (Val x) (Val y)
 
 nixShow :: Foreign -> String
 nixShow =

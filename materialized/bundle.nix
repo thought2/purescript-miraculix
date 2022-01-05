@@ -16737,92 +16737,6 @@ in
   {inherit assertEq assertLt assertGt assert- isSuccess message;}
 ;
 
-Test-Miraculix-Classless_default-nix = 
-let
-  module = 
-    { "Data.Eq" = Data-Eq_default-nix;
-      "Data.Foldable" = Data-Foldable_default-nix;
-      "Data.Function" = Data-Function_default-nix;
-      "Data.Functor" = Data-Functor_default-nix;
-      "Data.Monoid" = Data-Monoid_default-nix;
-      "Data.Semigroup" = Data-Semigroup_default-nix;
-      "Data.Show" = Data-Show_default-nix;
-      "Data.Tuple" = Data-Tuple_default-nix;
-      "Data.Tuple.Nested" = Data-Tuple-Nested_default-nix;
-      "Foreign" = Foreign_default-nix;
-      "Foreign.Object" = Foreign-Object_default-nix;
-      "Foreign.Path" = Foreign-Path_default-nix;
-      "Partial.Unsafe" = Partial-Unsafe_default-nix;
-      "Prelude" = Prelude_default-nix;
-      "Test.Miraculix" = Test-Miraculix_default-nix;
-      "Test.Miraculix.Assertion" = Test-Miraculix-Assertion_default-nix;
-      "Unsafe.Coerce" = Unsafe-Coerce_default-nix;
-    };
-  foreign = Test-Miraculix-Classless_foreign-nix;
-  nixEq = foreign.nixEq;
-  Val = x: x;
-  eqVal = {eq = nixEq;};
-  caseForeign = onAttrs: onBool: onPath: onFloat: onFunction: onInt: onList: onNull: onString: v: 
-    let
-      u = module."Unsafe.Coerce".unsafeCoerce;
-      go = dictPartial: 
-        let
-          __pattern0 = __fail: if module."Foreign".isAttrs v then module."Data.Function".apply onAttrs (u v) else if module."Foreign".isBool v then module."Data.Function".apply onBool (u v) else if module."Foreign".isPath v then module."Data.Function".apply onPath (u v) else if module."Foreign".isFloat v then module."Data.Function".apply onFloat (u v) else if module."Foreign".isFunction v then module."Data.Function".apply onFunction (u v) else if module."Foreign".isInt v then module."Data.Function".apply onInt (u v) else if module."Foreign".isList v then module."Data.Function".apply onList (u v) else if module."Foreign".isNull v then module."Data.Function".apply onNull (u v) else if module."Foreign".isString v then module."Data.Function".apply onString (u v) else __fail;
-          __patternFail = builtins.throw "Pattern match failure in src/Test/Miraculix/Classless.purs at 83:3 - 83:21";
-        in
-          __pattern0 __patternFail;
-    in
-      module."Partial.Unsafe".unsafePartial (dictPartial: go module."Prim".undefined);
-  nixShow = 
-    let
-      showNull = v: "null";
-      showListItem = x: module."Data.Semigroup".append module."Data.Semigroup".semigroupString (nixShow x) " ";
-      showList = xs: module."Data.Semigroup".append module."Data.Semigroup".semigroupString "[ " (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Function".apply (module."Data.Foldable".intercalate module."Data.Foldable".foldableArray module."Data.Monoid".monoidString "") (module."Data.Functor".map module."Data.Functor".functorArray showListItem xs)) "]");
-      showFunction = v: "<function>";
-      showAttr = v: 
-        let
-          __pattern0 = __fail: 
-            if v.__tag == "Tuple"
-              then 
-                let
-                  k = v.__field0;
-                  v1 = v.__field1;
-                in
-                  module."Data.Semigroup".append module."Data.Semigroup".semigroupString k (module."Data.Semigroup".append module."Data.Semigroup".semigroupString " = " (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (nixShow v1) "; "))
-              else __fail;
-          __patternFail = builtins.throw "Pattern match failure in src/Test/Miraculix/Classless.purs at 55:3 - 55:54";
-        in
-          __pattern0 __patternFail;
-      showAttrSet = o: module."Data.Semigroup".append module."Data.Semigroup".semigroupString "{ " (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Function".apply (module."Data.Foldable".intercalate module."Data.Foldable".foldableArray module."Data.Monoid".monoidString "") (module."Data.Functor".map module."Data.Functor".functorArray showAttr (module."Foreign.Object".toArrayWithKey module."Data.Tuple".Tuple o))) "}");
-    in
-      caseForeign showAttrSet (module."Data.Show".show module."Data.Show".showBoolean) module."Foreign.Path".toString (module."Data.Show".show module."Data.Show".showNumber) showFunction (module."Data.Show".show module."Data.Show".showInt) showList showNull (module."Data.Show".show module."Data.Show".showString);
-  showVal = 
-    { show = v: 
-        let
-          __pattern0 = __fail: 
-            let
-              fo = v;
-            in
-              nixShow fo;
-          __patternFail = builtins.throw "Pattern match failure in src/Test/Miraculix/Classless.purs at 30:1 - 31:29";
-        in
-          __pattern0 __patternFail;
-    };
-  assertEq = module."Test.Miraculix.Assertion".assertEq showVal eqVal;
-in
-  
-  { inherit assertEq nixShow eqVal showVal;
-    inherit (module."Test.Miraculix") runTests testCase testGroup;
-  }
-;
-
-Test-Miraculix-Classless_foreign-nix = {
-  nixEq = x: y: x == y;
-  nixShow = x: x;
-}
-
-;
-
 Test-Miraculix-FFI_default-nix = 
 let
   module = 
@@ -16864,6 +16778,102 @@ in
   bullet = "•";
 }
 
+;
+
+Test-Miraculix-Nix-Internal_default-nix = 
+let
+  module = 
+    { "Data.Eq" = Data-Eq_default-nix;
+      "Data.Foldable" = Data-Foldable_default-nix;
+      "Data.Function" = Data-Function_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.Monoid" = Data-Monoid_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+      "Data.Show" = Data-Show_default-nix;
+      "Data.Tuple" = Data-Tuple_default-nix;
+      "Data.Tuple.Nested" = Data-Tuple-Nested_default-nix;
+      "Foreign" = Foreign_default-nix;
+      "Foreign.Object" = Foreign-Object_default-nix;
+      "Foreign.Path" = Foreign-Path_default-nix;
+      "Partial.Unsafe" = Partial-Unsafe_default-nix;
+      "Prelude" = Prelude_default-nix;
+      "Test.Miraculix" = Test-Miraculix_default-nix;
+      "Test.Miraculix.Assertion" = Test-Miraculix-Assertion_default-nix;
+      "Unsafe.Coerce" = Unsafe-Coerce_default-nix;
+    };
+  foreign = Test-Miraculix-Nix-Internal_foreign-nix;
+  nixEq = foreign.nixEq;
+  Val = x: x;
+  eqVal = {eq = nixEq;};
+  caseForeign = onAttrs: onBool: onPath: onFloat: onFunction: onInt: onList: onNull: onString: v: 
+    let
+      u = module."Unsafe.Coerce".unsafeCoerce;
+      go = dictPartial: 
+        let
+          __pattern0 = __fail: if module."Foreign".isAttrs v then module."Data.Function".apply onAttrs (u v) else if module."Foreign".isBool v then module."Data.Function".apply onBool (u v) else if module."Foreign".isPath v then module."Data.Function".apply onPath (u v) else if module."Foreign".isFloat v then module."Data.Function".apply onFloat (u v) else if module."Foreign".isFunction v then module."Data.Function".apply onFunction (u v) else if module."Foreign".isInt v then module."Data.Function".apply onInt (u v) else if module."Foreign".isList v then module."Data.Function".apply onList (u v) else if module."Foreign".isNull v then module."Data.Function".apply onNull (u v) else if module."Foreign".isString v then module."Data.Function".apply onString (u v) else __fail;
+          __patternFail = builtins.throw "Pattern match failure in src/Test/Miraculix/Nix/Internal.purs at 80:3 - 80:21";
+        in
+          __pattern0 __patternFail;
+    in
+      module."Partial.Unsafe".unsafePartial (dictPartial: go module."Prim".undefined);
+  nixShow = 
+    let
+      showNull = v: "null";
+      showListItem = x: module."Data.Semigroup".append module."Data.Semigroup".semigroupString (nixShow x) " ";
+      showList = xs: module."Data.Semigroup".append module."Data.Semigroup".semigroupString "[ " (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Function".apply (module."Data.Foldable".intercalate module."Data.Foldable".foldableArray module."Data.Monoid".monoidString "") (module."Data.Functor".map module."Data.Functor".functorArray showListItem xs)) "]");
+      showFunction = v: "<function>";
+      showAttr = v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple"
+              then 
+                let
+                  k = v.__field0;
+                  v1 = v.__field1;
+                in
+                  module."Data.Semigroup".append module."Data.Semigroup".semigroupString k (module."Data.Semigroup".append module."Data.Semigroup".semigroupString " = " (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (nixShow v1) "; "))
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in src/Test/Miraculix/Nix/Internal.purs at 52:3 - 52:54";
+        in
+          __pattern0 __patternFail;
+      showAttrSet = o: module."Data.Semigroup".append module."Data.Semigroup".semigroupString "{ " (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Function".apply (module."Data.Foldable".intercalate module."Data.Foldable".foldableArray module."Data.Monoid".monoidString "") (module."Data.Functor".map module."Data.Functor".functorArray showAttr (module."Foreign.Object".toArrayWithKey module."Data.Tuple".Tuple o))) "}");
+    in
+      caseForeign showAttrSet (module."Data.Show".show module."Data.Show".showBoolean) module."Foreign.Path".toString (module."Data.Show".show module."Data.Show".showNumber) showFunction (module."Data.Show".show module."Data.Show".showInt) showList showNull (module."Data.Show".show module."Data.Show".showString);
+  showVal = 
+    { show = v: 
+        let
+          __pattern0 = __fail: 
+            let
+              fo = v;
+            in
+              nixShow fo;
+          __patternFail = builtins.throw "Pattern match failure in src/Test/Miraculix/Nix/Internal.purs at 27:1 - 28:29";
+        in
+          __pattern0 __patternFail;
+    };
+  assertEq = x: y: module."Test.Miraculix.Assertion".assertEq showVal eqVal x y;
+in
+  {inherit assertEq nixShow;}
+;
+
+Test-Miraculix-Nix-Internal_foreign-nix = {
+  nixEq = x: y: x == y;
+  nixShow = x: x;
+}
+
+;
+
+Test-Miraculix-Nix_default-nix = 
+let
+  module = 
+    { "Test.Miraculix" = Test-Miraculix_default-nix;
+      "Test.Miraculix.Nix.Internal" = Test-Miraculix-Nix-Internal_default-nix;
+    };
+in
+  
+  { inherit (module."Test.Miraculix") runTests testCase testGroup;
+    inherit (module."Test.Miraculix.Nix.Internal") assertEq;
+  }
 ;
 
 Test-Miraculix-Summary_default-nix = 
