@@ -16,6 +16,12 @@ jobs:
         with:
           nix_path: nixpkgs=channel:nixos-unstable
 
+      - name: Materialize
+        run: nix develop --command make materialize
+
+      - name: Check Git Status
+        run: nix develop --command make check-status
+
       - name: Build
         run: nix develop --command make build
 
