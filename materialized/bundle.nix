@@ -457,6 +457,288 @@ in
   {inherit defer fix lazyFn lazyUnit;}
 ;
 
+Control-Monad-ST-Class_default-nix = 
+let
+  module = 
+    { "Control.Category" = Control-Category_default-nix;
+      "Control.Monad.ST" = Control-Monad-ST_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  MonadST-Dict = x: x;
+  monadSTST = {liftST = module."Control.Category".identity module."Control.Category".categoryFn;};
+  liftST = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.liftST;
+      __patternFail = builtins.throw "Pattern match failure in .spago/st/cfdcc169101bd3188747051d0886e33615ab7c2c/src/Control/Monad/ST/Class.purs at 11:3 - 11:22";
+    in
+      __pattern0 __patternFail;
+in
+  {inherit liftST monadSTST;}
+;
+
+Control-Monad-ST-Internal_default-nix = 
+let
+  module = 
+    { "Control.Applicative" = Control-Applicative_default-nix;
+      "Control.Apply" = Control-Apply_default-nix;
+      "Control.Bind" = Control-Bind_default-nix;
+      "Control.Monad" = Control-Monad_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  foreign = Control-Monad-ST-Internal_foreign-nix;
+  map_ = foreign.map_;
+  pure_ = foreign.pure_;
+  bind_ = foreign.bind_;
+  run = foreign.run;
+  while = foreign.while;
+  for = foreign.for;
+  foreach = foreign.foreach;
+  new = foreign.new;
+  read = foreign.read;
+  modifyImpl = foreign.modifyImpl;
+  write = foreign.write;
+  modify' = modifyImpl;
+  modify = f: modify' 
+    ( s: 
+      let
+        s' = f s;
+      in
+        
+        { state = s';
+          value = s';
+        }
+    );
+  functorST = {map = map_;};
+  monadST = 
+    { "Applicative0" = __unused: applicativeST;
+      "Bind1" = __unused: bindST;
+    };
+  bindST = 
+    { bind = bind_;
+      "Apply0" = __unused: applyST;
+    };
+  applyST = 
+    { apply = module."Control.Monad".ap monadST;
+      "Functor0" = __unused: functorST;
+    };
+  applicativeST = 
+    { pure = pure_;
+      "Apply0" = __unused: applyST;
+    };
+in
+  {inherit run while for foreach new read modify' modify write functorST applyST applicativeST bindST monadST;}
+;
+
+Control-Monad-ST-Internal_foreign-nix = 
+# type STState = { nextId :: Int, refs :: RefMap }
+# type STReturn a = { res :: a, state :: STState }
+# type ST s a = STState -> STReturn a
+# type STRef = Int
+#
+# The ST monad is a state monad.  The state is `STState`.  `STState` is a
+# record with a `nextId` field and a `refs` field.
+#
+# The `ref` field is a `RefMap`.  A RefMap is a Nix attrset where the keys are
+# integers created from `nextId`, and the values are the `STRef`s that are stored
+# at each ID.
+#
+# The `nextId` field is the next id to use when creating a new `STRef`.
+#
+# Reading an STRef just requires looking up the value for an ID in the `refs`
+# map.  Writing an STRef requires updating the value for the ID in the `refs`
+# map.
+
+{ # :: forall r a b. (a -> b) -> ST r a -> ST r b
+  map_ = a2b: stA: state:
+    let
+      # :: STReturn a
+      stAReturn = stA state;
+    in
+    stAReturn // { res = a2b stAReturn.res; };
+
+  # :: forall r a. a -> ST r a
+  pure_ = a: state: { res = a; inherit state; };
+
+  # :: forall r a b. ST r a -> (a -> ST r b) -> ST r b
+  bind_ = m: k: state:
+    let
+      # :: STReturn a
+      mReturn = m state;
+      # :: STState
+      mReturnState = mReturn.state;
+      # :: a
+      a = mReturn.res;
+      # :: ST r b
+      stB = k a;
+      # :: STReturn b
+      stBReturn = stB mReturnState;
+    in
+    stBReturn;
+
+  # :: forall a. (forall r. ST r a) -> a
+  run = stA:
+    let
+      # :: STReturn a
+      stAReturn = stA { nextId = 0; refs = {}; };
+    in
+    stAReturn.res;
+
+  # :: forall r a. ST r Boolean -> ST r a -> ST r Unit
+  while = stBool: stA: state:
+    let
+      # :: ST r Unit
+      go = state':
+        let
+          # :: STReturn Boolean
+          stReturnBool = stBool state';
+          # :: Boolean
+          bool = stReturnBool.res;
+          # :: STState
+          stateAfterEvalBool = stReturnBool.state;
+        in
+        if bool then
+          let
+            # :: STReturn a
+            stReturnA = stA stateAfterEvalBool;
+            # :: STState
+            stateAfterEvalA = stReturnA.state;
+          in
+          go stateAfterEvalA
+        else
+          # PureScript unit is represented by null in the Nix output by
+          # PureNix.
+          { res = null; state = stateAfterEvalBool; };
+    in go state;
+
+
+# exports["while"] = function (f) {
+#   return function (a) {
+#     return function () {
+#       while (f()) {
+#         a();
+#       }
+#     };
+#   };
+# };
+
+  # :: forall r a. Int -> Int -> (Int -> ST r a) -> ST r Unit
+  for = lo: hi: f: state:
+    let
+      # :: Int -> STState -> STReturn a
+      go = i: state':
+        if i >= hi then
+          # PureScript unit is represented by null in the Nix output by
+          # PureNix.
+          { res = null; state = state'; }
+        else
+          let
+            # :: ST r a
+            nextST = f i;
+            # :: STReturn a
+            stReturn = nextST state';
+            # :: STState
+            newState  = stReturn.state;
+          in
+          go (i + 1) newState;
+    in
+    go lo state;
+
+  # :: forall r a. Array a -> (a -> ST r Unit) -> ST r Unit
+  foreach = arr: f: state:
+    let
+      # :: Int
+      arrLen = builtins.length arr;
+
+      # :: Int -> STState -> STReturn Unit
+      go = i: state':
+        if i >= arrLen then
+          # PureScript unit is represented by null in the Nix output by
+          # PureNix.
+          { res = null; state = state'; }
+        else
+          let
+            # :: a
+            a = builtins.elemAt arr i;
+            # :: ST r Unit
+            nextST = f a;
+            # :: STReturn Unit
+            stReturn = nextST state';
+            # :: STState
+            newState = stReturn.state;
+          in
+          go (i + 1) newState;
+    in
+    go 0 state;
+
+  # new :: forall a r. a -> ST r (STRef r a)
+  new = a: state:
+    let
+      # :: Int
+      nextId = state.nextId;
+      # :: RefMap
+      refs = state.refs;
+      # :: String
+      newKey = toString nextId;
+      # :: Int
+      newNextId = nextId + 1;
+      # :: RefMap
+      newRefs = refs // { "${toString nextId}" = a; };
+      # :: STState
+      newState = { nextId = newNextId; refs = newRefs; };
+    in
+    { res = nextId; state = newState; };
+
+  # read :: forall a r. STRef r a -> ST r a
+  read = id: state: { res = state.refs.${toString id}; inherit state; };
+
+  # :: forall r a b. (a -> { state :: a, value :: b }) -> STRef r a -> ST r b
+  modifyImpl = f: id: state:
+    let
+      # :: { state :: a, value :: b }
+      newSAndV = f state.refs.${toString id};
+      # :: a
+      newS = newSAndV.state;
+      # :: b
+      newV = newSAndV.value;
+      # :: RefMap
+      newRefs = state.refs // { "${toString id}" = newS; };
+      # :: STState
+      newState = { nextId  = state.nextId; refs = newRefs; };
+    in
+    { res = newV; state = newState; };
+
+  # :: forall a r. a -> STRef r a -> ST r a
+  write = a: id: state:
+    let
+      # :: RefMap
+      newRefs = state.refs // { "${toString id}" = a; };
+      # :: STState
+      newState = { nextId = state.nextId; refs = newRefs; };
+    in
+    { res = a; state = newState; };
+}
+
+;
+
+Control-Monad-ST-Ref_default-nix = 
+let
+  module = {"Control.Monad.ST.Internal" = Control-Monad-ST-Internal_default-nix;};
+in
+  {inherit (module."Control.Monad.ST.Internal") modify modify' new read write;}
+;
+
+Control-Monad-ST_default-nix = 
+let
+  module = {"Control.Monad.ST.Internal" = Control-Monad-ST-Internal_default-nix;};
+in
+  {inherit (module."Control.Monad.ST.Internal") for foreach run while;}
+;
+
 Control-Monad_default-nix = 
 let
   module = 
@@ -609,6 +891,1716 @@ let
   composeFlipped = dictSemigroupoid: f: g: compose dictSemigroupoid g f;
 in
   {inherit compose composeFlipped semigroupoidFn;}
+;
+
+Data-Array-NonEmpty-Internal_default-nix = 
+let
+  module = 
+    { "Control.Alt" = Control-Alt_default-nix;
+      "Control.Applicative" = Control-Applicative_default-nix;
+      "Control.Apply" = Control-Apply_default-nix;
+      "Control.Bind" = Control-Bind_default-nix;
+      "Control.Monad" = Control-Monad_default-nix;
+      "Data.Eq" = Data-Eq_default-nix;
+      "Data.Foldable" = Data-Foldable_default-nix;
+      "Data.FoldableWithIndex" = Data-FoldableWithIndex_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.FunctorWithIndex" = Data-FunctorWithIndex_default-nix;
+      "Data.Ord" = Data-Ord_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+      "Data.Semigroup.Foldable" = Data-Semigroup-Foldable_default-nix;
+      "Data.Semigroup.Traversable" = Data-Semigroup-Traversable_default-nix;
+      "Data.Show" = Data-Show_default-nix;
+      "Data.Traversable" = Data-Traversable_default-nix;
+      "Data.TraversableWithIndex" = Data-TraversableWithIndex_default-nix;
+      "Data.Unfoldable1" = Data-Unfoldable1_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  foreign = Data-Array-NonEmpty-Internal_foreign-nix;
+  foldr1Impl = foreign.foldr1Impl;
+  foldl1Impl = foreign.foldl1Impl;
+  traverse1Impl = foreign.traverse1Impl;
+  NonEmptyArray = x: x;
+  unfoldable1NonEmptyArray = module."Data.Unfoldable1".unfoldable1Array;
+  traversableWithIndexNonEmptyArray = module."Data.TraversableWithIndex".traversableWithIndexArray;
+  traversableNonEmptyArray = module."Data.Traversable".traversableArray;
+  showNonEmptyArray = dictShow: 
+    { show = v: 
+        let
+          __pattern0 = __fail: 
+            let
+              xs = v;
+            in
+              module."Data.Semigroup".append module."Data.Semigroup".semigroupString "(NonEmptyArray " (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Show".show (module."Data.Show".showArray dictShow) xs) ")");
+          __patternFail = builtins.throw "Pattern match failure in .spago/arrays/cce2d13db0877d208a0cdc57c0e12d60e2b02cfb/src/Data/Array/NonEmpty/Internal.purs at 33:1 - 34:64";
+        in
+          __pattern0 __patternFail;
+    };
+  semigroupNonEmptyArray = module."Data.Semigroup".semigroupArray;
+  ordNonEmptyArray = dictOrd: module."Data.Ord".ordArray dictOrd;
+  ord1NonEmptyArray = module."Data.Ord".ord1Array;
+  monadNonEmptyArray = module."Control.Monad".monadArray;
+  functorWithIndexNonEmptyArray = module."Data.FunctorWithIndex".functorWithIndexArray;
+  functorNonEmptyArray = module."Data.Functor".functorArray;
+  foldableWithIndexNonEmptyArray = module."Data.FoldableWithIndex".foldableWithIndexArray;
+  foldableNonEmptyArray = module."Data.Foldable".foldableArray;
+  foldable1NonEmptyArray = 
+    { foldMap1 = dictSemigroup: module."Data.Semigroup.Foldable".foldMap1DefaultL foldable1NonEmptyArray functorNonEmptyArray dictSemigroup;
+      foldr1 = foldr1Impl;
+      foldl1 = foldl1Impl;
+      "Foldable0" = __unused: foldableNonEmptyArray;
+    };
+  traversable1NonEmptyArray = 
+    { traverse1 = dictApply: traverse1Impl (module."Control.Apply".apply dictApply) (module."Data.Functor".map (dictApply."Functor0" module."Prim".undefined));
+      sequence1 = dictApply: module."Data.Semigroup.Traversable".sequence1Default traversable1NonEmptyArray dictApply;
+      "Foldable10" = __unused: foldable1NonEmptyArray;
+      "Traversable1" = __unused: traversableNonEmptyArray;
+    };
+  eqNonEmptyArray = dictEq: module."Data.Eq".eqArray dictEq;
+  eq1NonEmptyArray = module."Data.Eq".eq1Array;
+  bindNonEmptyArray = module."Control.Bind".bindArray;
+  applyNonEmptyArray = module."Control.Apply".applyArray;
+  applicativeNonEmptyArray = module."Control.Applicative".applicativeArray;
+  altNonEmptyArray = module."Control.Alt".altArray;
+in
+  {inherit NonEmptyArray showNonEmptyArray eqNonEmptyArray eq1NonEmptyArray ordNonEmptyArray ord1NonEmptyArray semigroupNonEmptyArray functorNonEmptyArray functorWithIndexNonEmptyArray foldableNonEmptyArray foldableWithIndexNonEmptyArray foldable1NonEmptyArray unfoldable1NonEmptyArray traversableNonEmptyArray traversableWithIndexNonEmptyArray traversable1NonEmptyArray applyNonEmptyArray applicativeNonEmptyArray bindNonEmptyArray monadNonEmptyArray altNonEmptyArray;}
+;
+
+Data-Array-NonEmpty-Internal_foreign-nix = let
+  # This is from nixpkgs/lib/lists.nix.
+  foldr = op: nul: list:
+    let
+      len = builtins.length list;
+      fold' = n:
+        if n == len
+        then nul
+        else op (builtins.elemAt list n) (fold' (n + 1));
+    in fold' 0;
+in
+{
+  # :: forall a. (a -> a -> a) -> NonEmptyArray a -> a
+  #
+  # Implementation taken from
+  # https://hackage.haskell.org/package/base-4.15.0.0/docs/src/GHC-List.html#foldr1
+  foldr1Impl = f: arr:
+    let
+      # :: NonEmptyArray a -> a
+      go = arr:
+        if builtins.length arr > 1 then
+          let
+            # :: a
+            firstElem = builtins.head arr;
+            # :: NonEmptyArray a
+            remainingElems = builtins.tail arr;
+          in
+          f firstElem (go remainingElems)
+        else
+          # If the length of arr is not greater than 1, then we know it must be
+          # 1.
+          builtins.head arr;
+    in
+    go arr;
+
+  # :: forall a. (a -> a -> a) -> NonEmptyArray a -> a
+  foldl1Impl = f: arr:
+    let
+      firstElem = builtins.head arr;
+      remainingElems = builtins.tail arr;
+    in
+    builtins.foldl' f firstElem remainingElems;
+
+  # :: forall m a b
+  #  . (forall a' b'. (m (a' -> b') -> m a' -> m b'))  # apply
+  # -> (forall a' b'. (a' -> b') -> m a' -> m b')      # map
+  # -> (a -> m b)
+  # -> NonEmptyArray a
+  # -> m (NonEmptyArray b)
+  #
+  # Implementation taken from
+  # https://github.com/ekmett/semigroupoids/blob/8a74e309c533677318d065187b829a80887d0df6/src/Data/Semigroup/Traversable/Class.hs#L228-L229
+  traverse1Impl = apply: fmap: f: arr:
+    let
+      # :: a
+      firstElem = builtins.head arr;
+      # :: Array a
+      remainingElems = builtins.tail arr;
+      # :: forall x. x -> NonEmptyArray x
+      singleton = x: [ x ];
+      # :: a -> m (NonEmptyArray b)
+      mXToSingleton = a: fmap singleton (f a);
+      # :: forall x. x -> NonEmptyArray x -> NonEmptyArray x
+      cons = m: ms: [m] ++ ms;
+      # :: a -> (a -> m (NonEmptyArray b)) -> a -> m (NonEmptyArray b)
+      go = a1: accumF: a2: apply (fmap cons (f a2)) (accumF a1);
+    in
+    foldr go mXToSingleton remainingElems firstElem;
+}
+
+;
+
+Data-Array-NonEmpty_default-nix = 
+let
+  module = 
+    { "Control.Alternative" = Control-Alternative_default-nix;
+      "Control.Bind" = Control-Bind_default-nix;
+      "Control.Lazy" = Control-Lazy_default-nix;
+      "Control.Semigroupoid" = Control-Semigroupoid_default-nix;
+      "Data.Array" = Data-Array_default-nix;
+      "Data.Array.NonEmpty.Internal" = Data-Array-NonEmpty-Internal_default-nix;
+      "Data.Bifunctor" = Data-Bifunctor_default-nix;
+      "Data.Boolean" = Data-Boolean_default-nix;
+      "Data.Eq" = Data-Eq_default-nix;
+      "Data.Foldable" = Data-Foldable_default-nix;
+      "Data.Function" = Data-Function_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.Maybe" = Data-Maybe_default-nix;
+      "Data.NonEmpty" = Data-NonEmpty_default-nix;
+      "Data.Ord" = Data-Ord_default-nix;
+      "Data.Ring" = Data-Ring_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+      "Data.Semigroup.Foldable" = Data-Semigroup-Foldable_default-nix;
+      "Data.Semiring" = Data-Semiring_default-nix;
+      "Data.Tuple" = Data-Tuple_default-nix;
+      "Data.Unfoldable" = Data-Unfoldable_default-nix;
+      "Data.Unfoldable1" = Data-Unfoldable1_default-nix;
+      "Partial.Unsafe" = Partial-Unsafe_default-nix;
+      "Prelude" = Prelude_default-nix;
+      "Prim.TypeError" = import ../Prim.TypeError;
+      "Unsafe.Coerce" = Unsafe-Coerce_default-nix;
+    };
+  unsafeFromArrayF = module."Unsafe.Coerce".unsafeCoerce;
+  unsafeFromArray = module."Data.Array.NonEmpty.Internal".NonEmptyArray;
+  toArray = v: 
+    let
+      __pattern0 = __fail: 
+        let
+          xs = v;
+        in
+          xs;
+      __patternFail = builtins.throw "Pattern match failure in .spago/arrays/cce2d13db0877d208a0cdc57c0e12d60e2b02cfb/src/Data/Array/NonEmpty.purs at 174:1 - 174:48";
+    in
+      __pattern0 __patternFail;
+  unionBy' = eq: xs: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn unsafeFromArray (module."Data.Array".unionBy eq (toArray xs));
+  union' = dictEq: unionBy' (module."Data.Eq".eq dictEq);
+  unionBy = eq: xs: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (unionBy' eq xs) toArray;
+  union = dictEq: unionBy (module."Data.Eq".eq dictEq);
+  unzip = module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Data.Bifunctor".bimap module."Data.Bifunctor".bifunctorTuple unsafeFromArray unsafeFromArray) (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."Data.Array".unzip toArray);
+  updateAt = i: x: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn unsafeFromArrayF (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Data.Array".updateAt i x) toArray);
+  zip = xs: ys: module."Data.Function".apply unsafeFromArray (module."Data.Array".zip (toArray xs) (toArray ys));
+  zipWith = f: xs: ys: module."Data.Function".apply unsafeFromArray (module."Data.Array".zipWith f (toArray xs) (toArray ys));
+  zipWithA = dictApplicative: f: xs: ys: module."Data.Function".apply unsafeFromArrayF (module."Data.Array".zipWithA dictApplicative f (toArray xs) (toArray ys));
+  splitAt = i: xs: module."Data.Function".apply (module."Data.Array".splitAt i) (toArray xs);
+  some = dictAlternative: dictLazy: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn unsafeFromArrayF (module."Data.Array".some dictAlternative dictLazy);
+  snoc' = xs: x: module."Data.Function".apply unsafeFromArray (module."Data.Array".snoc xs x);
+  snoc = xs: x: module."Data.Function".apply unsafeFromArray (module."Data.Array".snoc (toArray xs) x);
+  singleton = module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn unsafeFromArray module."Data.Array".singleton;
+  replicate = i: x: module."Data.Function".apply unsafeFromArray (module."Data.Array".replicate (module."Data.Ord".max module."Data.Ord".ordInt 1 i) x);
+  range = x: y: module."Data.Function".apply unsafeFromArray (module."Data.Array".range x y);
+  modifyAt = i: f: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn unsafeFromArrayF (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Data.Array".modifyAt i f) toArray);
+  intersectBy' = eq: xs: module."Data.Array".intersectBy eq (toArray xs);
+  intersectBy = eq: xs: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (intersectBy' eq xs) toArray;
+  intersect' = dictEq: intersectBy' (module."Data.Eq".eq dictEq);
+  intersect = dictEq: intersectBy (module."Data.Eq".eq dictEq);
+  intercalate = dictSemigroup: module."Data.Semigroup.Foldable".intercalate module."Data.Array.NonEmpty.Internal".foldable1NonEmptyArray dictSemigroup;
+  insertAt = i: x: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn unsafeFromArrayF (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Data.Array".insertAt i x) toArray);
+  fromFoldable1 = dictFoldable1: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn unsafeFromArray (module."Data.Array".fromFoldable (dictFoldable1."Foldable0" module."Prim".undefined));
+  fromArray = xs: 
+    let
+      __pattern0 = __fail: 
+        let
+          xs1 = xs;
+        in
+          if module."Data.Ord".greaterThan module."Data.Ord".ordInt (module."Data.Array".length xs1) 0 then module."Data.Maybe".Just (unsafeFromArray xs1) else if module."Data.Boolean".otherwise then module."Data.Maybe".Nothing else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/arrays/cce2d13db0877d208a0cdc57c0e12d60e2b02cfb/src/Data/Array/NonEmpty.purs at 159:1 - 159:58";
+    in
+      __pattern0 __patternFail;
+  fromFoldable = dictFoldable: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn fromArray (module."Data.Array".fromFoldable dictFoldable);
+  foldr1 = module."Data.Semigroup.Foldable".foldr1 module."Data.Array.NonEmpty.Internal".foldable1NonEmptyArray;
+  foldl1 = module."Data.Semigroup.Foldable".foldl1 module."Data.Array.NonEmpty.Internal".foldable1NonEmptyArray;
+  foldMap1 = dictSemigroup: module."Data.Semigroup.Foldable".foldMap1 module."Data.Array.NonEmpty.Internal".foldable1NonEmptyArray dictSemigroup;
+  fold1 = dictSemigroup: module."Data.Semigroup.Foldable".fold1 module."Data.Array.NonEmpty.Internal".foldable1NonEmptyArray dictSemigroup;
+  difference' = dictEq: xs: module."Data.Function".apply (module."Data.Array".difference dictEq) (toArray xs);
+  cons' = x: xs: module."Data.Function".apply unsafeFromArray (module."Data.Array".cons x xs);
+  fromNonEmpty = v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "NonEmpty"
+          then 
+            let
+              x = v.__field0;
+              xs = v.__field1;
+            in
+              cons' x xs
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/arrays/cce2d13db0877d208a0cdc57c0e12d60e2b02cfb/src/Data/Array/NonEmpty.purs at 171:1 - 171:62";
+    in
+      __pattern0 __patternFail;
+  concatMap = module."Data.Function".flip (module."Control.Bind".bind module."Data.Array.NonEmpty.Internal".bindNonEmptyArray);
+  concat = module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn unsafeFromArray (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."Data.Array".concat (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn toArray (module."Data.Functor".map module."Data.Array.NonEmpty.Internal".functorNonEmptyArray toArray)));
+  appendArray = xs: ys: module."Data.Function".apply unsafeFromArray (module."Data.Semigroup".append module."Data.Semigroup".semigroupArray (toArray xs) ys);
+  alterAt = i: f: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Data.Array".alterAt i f) toArray;
+  adaptMaybe = f: module."Data.Function".apply module."Partial.Unsafe".unsafePartial (dictPartial: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Data.Maybe".fromJust module."Prim".undefined) (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn f toArray));
+  head = adaptMaybe module."Data.Array".head;
+  init = adaptMaybe module."Data.Array".init;
+  last = adaptMaybe module."Data.Array".last;
+  tail = adaptMaybe module."Data.Array".tail;
+  uncons = adaptMaybe module."Data.Array".uncons;
+  toNonEmpty = module."Control.Semigroupoid".composeFlipped module."Control.Semigroupoid".semigroupoidFn uncons 
+    ( v: 
+      let
+        __pattern0 = __fail: 
+          let
+            x = v.head;
+            xs = v.tail;
+          in
+            module."Data.NonEmpty".NonEmpty x xs;
+        __patternFail = builtins.throw "Pattern match failure in .spago/arrays/cce2d13db0877d208a0cdc57c0e12d60e2b02cfb/src/Data/Array/NonEmpty.purs at 178:25 - 178:56";
+      in
+        __pattern0 __patternFail
+    );
+  unsnoc = adaptMaybe module."Data.Array".unsnoc;
+  adaptAny = f: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn f toArray;
+  all = p: module."Data.Function".apply adaptAny (module."Data.Array".all p);
+  any = p: module."Data.Function".apply adaptAny (module."Data.Array".any p);
+  catMaybes = adaptAny module."Data.Array".catMaybes;
+  delete = dictEq: x: module."Data.Function".apply adaptAny (module."Data.Array".delete dictEq x);
+  deleteAt = i: module."Data.Function".apply adaptAny (module."Data.Array".deleteAt i);
+  deleteBy = f: x: module."Data.Function".apply adaptAny (module."Data.Array".deleteBy f x);
+  difference = dictEq: xs: module."Data.Function".apply adaptAny (difference' dictEq xs);
+  drop = i: module."Data.Function".apply adaptAny (module."Data.Array".drop i);
+  dropEnd = i: module."Data.Function".apply adaptAny (module."Data.Array".dropEnd i);
+  dropWhile = f: module."Data.Function".apply adaptAny (module."Data.Array".dropWhile f);
+  elem = dictEq: x: module."Data.Function".apply adaptAny (module."Data.Array".elem dictEq x);
+  elemIndex = dictEq: x: module."Data.Function".apply adaptAny (module."Data.Array".elemIndex dictEq x);
+  elemLastIndex = dictEq: x: module."Data.Function".apply adaptAny (module."Data.Array".elemLastIndex dictEq x);
+  filter = f: module."Data.Function".apply adaptAny (module."Data.Array".filter f);
+  filterA = dictApplicative: f: module."Data.Function".apply adaptAny (module."Data.Array".filterA dictApplicative f);
+  find = p: module."Data.Function".apply adaptAny (module."Data.Array".find p);
+  findIndex = p: module."Data.Function".apply adaptAny (module."Data.Array".findIndex p);
+  findLastIndex = x: module."Data.Function".apply adaptAny (module."Data.Array".findLastIndex x);
+  findMap = p: module."Data.Function".apply adaptAny (module."Data.Array".findMap p);
+  foldM = dictMonad: f: acc: module."Data.Function".apply adaptAny (module."Data.Array".foldM dictMonad f acc);
+  index = adaptAny module."Data.Array".index;
+  length = adaptAny module."Data.Array".length;
+  mapMaybe = f: module."Data.Function".apply adaptAny (module."Data.Array".mapMaybe f);
+  notElem = dictEq: x: module."Data.Function".apply adaptAny (module."Data.Array".notElem dictEq x);
+  partition = f: module."Data.Function".apply adaptAny (module."Data.Array".partition f);
+  slice = start: end: module."Data.Function".apply adaptAny (module."Data.Array".slice start end);
+  span = f: module."Data.Function".apply adaptAny (module."Data.Array".span f);
+  take = i: module."Data.Function".apply adaptAny (module."Data.Array".take i);
+  takeEnd = i: module."Data.Function".apply adaptAny (module."Data.Array".takeEnd i);
+  takeWhile = f: module."Data.Function".apply adaptAny (module."Data.Array".takeWhile f);
+  toUnfoldable = dictUnfoldable: adaptAny (module."Data.Array".toUnfoldable dictUnfoldable);
+  unsafeAdapt = f: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn unsafeFromArray (adaptAny f);
+  cons = x: module."Data.Function".apply unsafeAdapt (module."Data.Array".cons x);
+  group = dictEq: module."Data.Function".apply unsafeAdapt (module."Data.Array".group dictEq);
+  group' = dictWarn: dictOrd: module."Data.Function".apply unsafeAdapt (module."Data.Array".groupAll dictOrd);
+  groupAllBy = op: module."Data.Function".apply unsafeAdapt (module."Data.Array".groupAllBy op);
+  groupAll = dictOrd: groupAllBy (module."Data.Ord".compare dictOrd);
+  groupBy = op: module."Data.Function".apply unsafeAdapt (module."Data.Array".groupBy op);
+  insert = dictOrd: x: module."Data.Function".apply unsafeAdapt (module."Data.Array".insert dictOrd x);
+  insertBy = f: x: module."Data.Function".apply unsafeAdapt (module."Data.Array".insertBy f x);
+  intersperse = x: module."Data.Function".apply unsafeAdapt (module."Data.Array".intersperse x);
+  mapWithIndex = f: module."Data.Function".apply unsafeAdapt (module."Data.Array".mapWithIndex f);
+  modifyAtIndices = dictFoldable: is: f: module."Data.Function".apply unsafeAdapt (module."Data.Array".modifyAtIndices dictFoldable is f);
+  nub = dictOrd: unsafeAdapt (module."Data.Array".nub dictOrd);
+  nubBy = f: module."Data.Function".apply unsafeAdapt (module."Data.Array".nubBy f);
+  nubByEq = f: module."Data.Function".apply unsafeAdapt (module."Data.Array".nubByEq f);
+  nubEq = dictEq: unsafeAdapt (module."Data.Array".nubEq dictEq);
+  reverse = unsafeAdapt module."Data.Array".reverse;
+  scanl = f: x: module."Data.Function".apply unsafeAdapt (module."Data.Array".scanl f x);
+  scanr = f: x: module."Data.Function".apply unsafeAdapt (module."Data.Array".scanr f x);
+  sort = dictOrd: unsafeAdapt (module."Data.Array".sort dictOrd);
+  sortBy = f: module."Data.Function".apply unsafeAdapt (module."Data.Array".sortBy f);
+  sortWith = dictOrd: f: module."Data.Function".apply unsafeAdapt (module."Data.Array".sortWith dictOrd f);
+  updateAtIndices = dictFoldable: pairs: module."Data.Function".apply unsafeAdapt (module."Data.Array".updateAtIndices dictFoldable pairs);
+  unsafeIndex = dictPartial: adaptAny (module."Data.Array".unsafeIndex module."Prim".undefined);
+  toUnfoldable1 = dictUnfoldable1: xs: 
+    let
+      len = length xs;
+      f = i: module."Data.Function".apply (module."Data.Tuple".Tuple (module."Partial.Unsafe".unsafePartial (dictPartial: unsafeIndex module."Prim".undefined) xs i)) 
+        ( 
+          let
+            __pattern0 = __fail: if module."Data.Ord".lessThan module."Data.Ord".ordInt i (module."Data.Ring".sub module."Data.Ring".ringInt len 1) then module."Data.Maybe".Just (module."Data.Semiring".add module."Data.Semiring".semiringInt i 1) else __fail;
+            __pattern1 = __fail: module."Data.Maybe".Nothing;
+            __patternFail = builtins.throw "Pattern match failure in .spago/arrays/cce2d13db0877d208a0cdc57c0e12d60e2b02cfb/src/Data/Array/NonEmpty.purs at 194:11 - 194:58";
+          in
+            __pattern0 (__pattern1 __patternFail)
+        );
+    in
+      module."Data.Unfoldable1".unfoldr1 dictUnfoldable1 f 0;
+in
+  
+  { inherit fromArray fromNonEmpty toArray toNonEmpty fromFoldable fromFoldable1 toUnfoldable toUnfoldable1 singleton range replicate some length cons cons' snoc snoc' appendArray insert insertBy head last tail init uncons unsnoc index elem notElem elemIndex elemLastIndex find findMap findIndex findLastIndex insertAt deleteAt updateAt updateAtIndices modifyAt modifyAtIndices alterAt intersperse reverse concat concatMap filter partition splitAt filterA mapMaybe catMaybes mapWithIndex foldl1 foldr1 foldMap1 fold1 intercalate scanl scanr sort sortBy sortWith slice take takeEnd takeWhile drop dropEnd dropWhile span group groupAll group' groupBy groupAllBy nub nubBy nubEq nubByEq union union' unionBy unionBy' delete deleteBy difference difference' intersect intersect' intersectBy intersectBy' zipWith zipWithA zip unzip any all foldM unsafeIndex;
+    inherit (module."Data.Array.NonEmpty.Internal");
+  }
+;
+
+Data-Array-Partial_default-nix = 
+let
+  module = 
+    { "Data.Array" = Data-Array_default-nix;
+      "Data.Ring" = Data-Ring_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  tail = dictPartial: xs: module."Data.Array".slice 1 (module."Data.Array".length xs) xs;
+  last = dictPartial: xs: module."Data.Array".unsafeIndex module."Prim".undefined xs (module."Data.Ring".sub module."Data.Ring".ringInt (module."Data.Array".length xs) 1);
+  init = dictPartial: xs: module."Data.Array".slice 0 (module."Data.Ring".sub module."Data.Ring".ringInt (module."Data.Array".length xs) 1) xs;
+  head = dictPartial: xs: module."Data.Array".unsafeIndex module."Prim".undefined xs 0;
+in
+  {inherit head tail last init;}
+;
+
+Data-Array-ST-Iterator_default-nix = 
+let
+  module = 
+    { "Control.Applicative" = Control-Applicative_default-nix;
+      "Control.Bind" = Control-Bind_default-nix;
+      "Control.Monad.ST" = Control-Monad-ST_default-nix;
+      "Control.Monad.ST.Internal" = Control-Monad-ST-Internal_default-nix;
+      "Control.Monad.ST.Ref" = Control-Monad-ST-Ref_default-nix;
+      "Control.Semigroupoid" = Control-Semigroupoid_default-nix;
+      "Data.Array.ST" = Data-Array-ST_default-nix;
+      "Data.Function" = Data-Function_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.HeytingAlgebra" = Data-HeytingAlgebra_default-nix;
+      "Data.Maybe" = Data-Maybe_default-nix;
+      "Data.Semiring" = Data-Semiring_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  Iterator = value0: value1: 
+    { __tag = "Iterator";
+      __field0 = value0;
+      __field1 = value1;
+    };
+  peek = v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Iterator"
+          then 
+            let
+              f = v.__field0;
+              currentIndex = v.__field1;
+            in
+              module."Control.Bind".bind module."Control.Monad.ST.Internal".bindST (module."Control.Monad.ST.Internal".read currentIndex) (i: module."Control.Applicative".pure module."Control.Monad.ST.Internal".applicativeST (f i))
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/arrays/cce2d13db0877d208a0cdc57c0e12d60e2b02cfb/src/Data/Array/ST/Iterator.purs at 55:1 - 55:51";
+    in
+      __pattern0 __patternFail;
+  next = v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Iterator"
+          then 
+            let
+              f = v.__field0;
+              currentIndex = v.__field1;
+            in
+              module."Control.Bind".bind module."Control.Monad.ST.Internal".bindST (module."Control.Monad.ST.Internal".read currentIndex) (i: module."Control.Bind".bind module."Control.Monad.ST.Internal".bindST (module."Control.Monad.ST.Internal".modify (v1: module."Data.Semiring".add module."Data.Semiring".semiringInt v1 1) currentIndex) (__unused: module."Control.Applicative".pure module."Control.Monad.ST.Internal".applicativeST (f i)))
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/arrays/cce2d13db0877d208a0cdc57c0e12d60e2b02cfb/src/Data/Array/ST/Iterator.purs at 48:1 - 48:51";
+    in
+      __pattern0 __patternFail;
+  pushWhile = p: iter: array: module."Control.Bind".bind module."Control.Monad.ST.Internal".bindST (module."Control.Monad.ST.Internal".new false) 
+    ( break: module."Control.Monad.ST.Internal".while (module."Data.Functor".map module."Control.Monad.ST.Internal".functorST (module."Data.HeytingAlgebra".not module."Data.HeytingAlgebra".heytingAlgebraBoolean) (module."Control.Monad.ST.Internal".read break)) 
+      ( module."Control.Bind".bind module."Control.Monad.ST.Internal".bindST (peek iter) 
+        ( mx: 
+          let
+            __pattern0 = __fail: 
+              if mx.__tag == "Just"
+                then 
+                  let
+                    x = mx.__field0;
+                  in
+                    if p x then module."Control.Bind".bind module."Control.Monad.ST.Internal".bindST (module."Data.Array.ST".push x array) (__unused: module."Data.Function".apply (module."Data.Functor".void module."Control.Monad.ST.Internal".functorST) (next iter)) else __fail
+                else __fail;
+            __pattern1 = __fail: module."Data.Function".apply (module."Data.Functor".void module."Control.Monad.ST.Internal".functorST) (module."Control.Monad.ST.Internal".write true break);
+            __patternFail = builtins.throw "Pattern match failure in .spago/arrays/cce2d13db0877d208a0cdc57c0e12d60e2b02cfb/src/Data/Array/ST/Iterator.purs at 71:5 - 76:38";
+          in
+            __pattern0 (__pattern1 __patternFail)
+        )
+      )
+    );
+  pushAll = pushWhile (module."Data.Function".const true);
+  iterator = f: module."Data.Functor".map module."Control.Monad.ST.Internal".functorST (Iterator f) (module."Control.Monad.ST.Internal".new 0);
+  iterate = iter: f: module."Control.Bind".bind module."Control.Monad.ST.Internal".bindST (module."Control.Monad.ST.Internal".new false) 
+    ( break: module."Control.Monad.ST.Internal".while (module."Data.Functor".map module."Control.Monad.ST.Internal".functorST (module."Data.HeytingAlgebra".not module."Data.HeytingAlgebra".heytingAlgebraBoolean) (module."Control.Monad.ST.Internal".read break)) 
+      ( module."Control.Bind".bind module."Control.Monad.ST.Internal".bindST (next iter) 
+        ( mx: 
+          let
+            __pattern0 = __fail: 
+              if mx.__tag == "Just"
+                then 
+                  let
+                    x = mx.__field0;
+                  in
+                    f x
+                else __fail;
+            __pattern1 = __fail: if mx.__tag == "Nothing" then module."Data.Function".apply (module."Data.Functor".void module."Control.Monad.ST.Internal".functorST) (module."Control.Monad.ST.Internal".write true break) else __fail;
+            __patternFail = builtins.throw "Pattern match failure in .spago/arrays/cce2d13db0877d208a0cdc57c0e12d60e2b02cfb/src/Data/Array/ST/Iterator.purs at 42:5 - 44:47";
+          in
+            __pattern0 (__pattern1 __patternFail)
+        )
+      )
+    );
+  exhausted = module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Data.Functor".map module."Control.Monad.ST.Internal".functorST module."Data.Maybe".isNothing) peek;
+in
+  {inherit iterator iterate next peek exhausted pushWhile pushAll;}
+;
+
+Data-Array-ST-Partial_default-nix = 
+let
+  module = 
+    { "Control.Monad.ST" = Control-Monad-ST_default-nix;
+      "Data.Array.ST" = Data-Array-ST_default-nix;
+      "Data.Unit" = Data-Unit_default-nix;
+    };
+  foreign = Data-Array-ST-Partial_foreign-nix;
+  peekImpl = foreign.peekImpl;
+  pokeImpl = foreign.pokeImpl;
+  poke = dictPartial: pokeImpl;
+  peek = dictPartial: peekImpl;
+in
+  {inherit peek poke;}
+;
+
+Data-Array-ST-Partial_foreign-nix = let
+  # read :: forall a r. STRef r a -> ST r a
+  #
+  # This is the `read` function from
+  # purescript-st/src/Control/Monad/ST/Internal.nix.
+  stRead = id: state: { res = state.refs.${toString id}; inherit state; };
+
+  # :: forall a r. a -> STRef r a -> ST r a
+  stWrite = a: id: state:
+    let
+      # :: RefMap
+      newRefs = state.refs // { "${toString id}" = a; };
+      # :: STState
+      newState = { nextId = state.nextId; refs = newRefs; };
+    in
+    { res = a; state = newState; };
+
+in
+{
+  # :: forall h a. Int -> STArray h a -> ST h a
+  peekImpl = index: id: state:
+    let
+      # :: STReturn (Array a)
+      ret = stRead id state;
+
+      # :: STState
+      newState = ret.state;
+
+      # :: Array a
+      arr = ret.res;
+    in
+      { res = builtins.elemAt arr index; state = newState; };
+
+  # :: forall h a. Int -> a -> STArray h a -> ST h Unit
+  pokeImpl = index: a: id: state:
+    let
+      # :: STReturn (Array a)
+      ret = stRead id state;
+
+      # :: STState
+      newState = ret.state;
+
+      # :: Array a
+      arr = ret.res;
+
+      # :: Int
+      len = builtins.length arr;
+
+      # :: Array a
+      newArr =
+        builtins.genList (i: if i == index then a else builtins.elemAt arr i) len;
+
+      # :: STReturn (Array a)
+      ret' = stWrite newArr id newState;
+
+      # :: STState
+      newState' = ret'.state;
+    in
+      { res = null; state = newState'; };
+}
+
+;
+
+Data-Array-ST_default-nix = 
+let
+  module = 
+    { "Control.Applicative" = Control-Applicative_default-nix;
+      "Control.Bind" = Control-Bind_default-nix;
+      "Control.Monad.ST" = Control-Monad-ST_default-nix;
+      "Control.Monad.ST.Internal" = Control-Monad-ST-Internal_default-nix;
+      "Data.Maybe" = Data-Maybe_default-nix;
+      "Data.Ord" = Data-Ord_default-nix;
+      "Data.Ordering" = Data-Ordering_default-nix;
+      "Data.Ring" = Data-Ring_default-nix;
+      "Prelude" = Prelude_default-nix;
+      "Prim.TypeError" = import ../Prim.TypeError;
+    };
+  foreign = Data-Array-ST_foreign-nix;
+  unsafeFreeze = foreign.unsafeFreeze;
+  unsafeThaw = foreign.unsafeThaw;
+  new = foreign.new;
+  thaw = foreign.thaw;
+  shiftImpl = foreign.shiftImpl;
+  sortByImpl = foreign.sortByImpl;
+  freeze = foreign.freeze;
+  peekImpl = foreign.peekImpl;
+  poke = foreign.poke;
+  popImpl = foreign.popImpl;
+  pushAll = foreign.pushAll;
+  unshiftAll = foreign.unshiftAll;
+  toAssocArray = foreign.toAssocArray;
+  withArray = f: xs: module."Control.Bind".bind module."Control.Monad.ST.Internal".bindST (thaw xs) (result: module."Control.Bind".bind module."Control.Monad.ST.Internal".bindST (f result) (__unused: unsafeFreeze result));
+  unshift = a: unshiftAll [a];
+  sortBy = comp: sortByImpl comp 
+    ( v: 
+      let
+        __pattern0 = __fail: if v.__tag == "GT" then 1 else __fail;
+        __pattern1 = __fail: if v.__tag == "EQ" then 0 else __fail;
+        __pattern2 = __fail: if v.__tag == "LT" then module."Data.Ring".negate module."Data.Ring".ringInt 1 else __fail;
+        __patternFail = builtins.throw "Pattern match failure in .spago/arrays/cce2d13db0877d208a0cdc57c0e12d60e2b02cfb/src/Data/Array/ST.purs at 113:31 - 116:11";
+      in
+        __pattern0 (__pattern1 (__pattern2 __patternFail))
+    );
+  sortWith = dictOrd: f: sortBy (module."Data.Ord".comparing dictOrd f);
+  sort = dictOrd: sortBy (module."Data.Ord".compare dictOrd);
+  shift = shiftImpl module."Data.Maybe".Just module."Data.Maybe".Nothing;
+  run = st: module."Control.Monad.ST.Internal".run (module."Control.Bind".bind module."Control.Monad.ST.Internal".bindST st unsafeFreeze);
+  push = a: pushAll [a];
+  pop = popImpl module."Data.Maybe".Just module."Data.Maybe".Nothing;
+  peek = peekImpl module."Data.Maybe".Just module."Data.Maybe".Nothing;
+  modify = i: f: xs: module."Control.Bind".bind module."Control.Monad.ST.Internal".bindST (peek i xs) 
+    ( entry: 
+      let
+        __pattern0 = __fail: 
+          if entry.__tag == "Just"
+            then 
+              let
+                x = entry.__field0;
+              in
+                poke i (f x) xs
+            else __fail;
+        __pattern1 = __fail: if entry.__tag == "Nothing" then module."Control.Applicative".pure module."Control.Monad.ST.Internal".applicativeST false else __fail;
+        __patternFail = builtins.throw "Pattern match failure in .spago/arrays/cce2d13db0877d208a0cdc57c0e12d60e2b02cfb/src/Data/Array/ST.purs at 198:3 - 200:26";
+      in
+        __pattern0 (__pattern1 __patternFail)
+    );
+  empty = dictWarn: new;
+in
+  {inherit run withArray new empty peek poke modify pop push pushAll shift unshift unshiftAll sort sortBy sortWith freeze thaw unsafeFreeze unsafeThaw toAssocArray;}
+;
+
+Data-Array-ST_foreign-nix = 
+# type STArray r a = STRef r (Array a)
+#
+# An STArray is the same as an STRef, just pointing to an Array.
+#
+# See the documentation in purescript-st/src/Control/Monad/ST/Internal.nix for
+# how ST is implemented.
+
+let
+  # :: forall a r. a -> ST r (STRef r a)
+  #
+  # This is the `new` function from
+  # purescript-st/src/Control/Monad/ST/Internal.nix.
+  stNew = a: state:
+    let
+      # :: Int
+      nextId = state.nextId;
+      # :: RefMap
+      refs = state.refs;
+      # :: String
+      newKey = toString nextId;
+      # :: Int
+      newNextId = nextId + 1;
+      # :: RefMap
+      newRefs = refs // { "${toString nextId}" = a; };
+      # :: STState
+      newState = { nextId = newNextId; refs = newRefs; };
+    in
+    { res = nextId; state = newState; };
+
+  # read :: forall a r. STRef r a -> ST r a
+  #
+  # This is the `read` function from
+  # purescript-st/src/Control/Monad/ST/Internal.nix.
+  stRead = id: state: { res = state.refs.${toString id}; inherit state; };
+
+  # :: forall a r. a -> STRef r a -> ST r a
+  stWrite = a: id: state:
+    let
+      # :: RefMap
+      newRefs = state.refs // { "${toString id}" = a; };
+      # :: STState
+      newState = { nextId = state.nextId; refs = newRefs; };
+    in
+    { res = a; state = newState; };
+in
+
+{
+  # :: forall h a. STArray h a -> ST h (Array a)
+  unsafeFreeze = id: state: stRead id state;
+
+  # :: froall h a. Array a -> ST h (STArray h a)
+  unsafeThaw = arr: state: stNew arr state;
+
+  # :: forall h a. ST h (STArray h a)
+  new = state: stNew [] state;
+
+  # :: forall h a. Array a -> ST h (STArray h a)
+  thaw = arr: state: stNew arr state;
+
+  # :: forall h a
+  #  . (forall b. b -> Maybe b)  # Just
+  # -> (forall b. Maybe b)       # Nothing
+  # -> STArray h a
+  # -> ST h (Maybe a)
+  shiftImpl = Just: Nothing: id: state:
+    let
+      # :: STReturn (Array a)
+      ret = stRead id state;
+
+      # :: STState
+      newState = ret.state;
+
+      # :: Array a
+      arr = ret.res;
+    in
+    if builtins.length arr == 0 then
+      { res = Nothing; state = newState; }
+    else
+      let
+        # :: a
+        firstElem = builtins.head arr;
+
+        # :: Array a
+        newArr = builtins.tail arr;
+
+        # :: STReturn (Array a)
+        ret' = stWrite newArr id newState;
+
+        # :: STState
+        newState' = ret'.state;
+      in
+      { res = Just firstElem; state = newState'; };
+
+  # :: forall a h
+  #  . (a -> a -> Ordering)
+  # -> (Ordering -> Int)
+  # -> STArray h a
+  # -> ST h (STArray h a)
+  sortByImpl = comp: ord2Int: id: state:
+    let
+      # :: STReturn (Array a)
+      ret = stRead id state;
+
+      # :: STState
+      newState = ret.state;
+
+      # :: Array a
+      arr = ret.res;
+
+      # :: a -> a -> Boolean
+      sortF = a: b: if ord2Int (comp a b) == -1 then true else false;
+
+      # :: Array a
+      sortedArray = builtins.sort sortF arr;
+
+      # :: STReturn (Array a)
+      ret' = stWrite sortedArray id newState;
+    in
+    { res = id; state = ret'.state; };
+
+  # :: forall h a. STArray h a -> ST h (Array a)
+  freeze = id: state: stRead id state;
+
+  # :: forall h a r
+  #  . (a -> r)      # function to apply if index is in Array (Just)
+  # -> r             # value to return if index is not in Array (Nothing)
+  # -> Int           # index
+  # -> STArray h a
+  # -> ST h r
+  peekImpl = Just: Nothing: index: id: state:
+    let
+      # :: STReturn (Array a)
+      ret = stRead id state;
+
+      # :: STState
+      newState = ret.state;
+
+      # :: Array a
+      arr = ret.res;
+    in
+    if index < builtins.length arr && index >= 0 then
+      { res = Just (builtins.elemAt arr index); state = newState; }
+    else
+      { res = Nothing; state = newState; };
+
+  # :: forall h a. Int -> a -> STArray h a -> ST h Boolean
+  poke = index: a: id: state:
+    let
+      # :: STReturn (Array a)
+      ret = stRead id state;
+
+      # :: STState
+      newState = ret.state;
+
+      # :: Array a
+      arr = ret.res;
+
+      # :: Int
+      len = builtins.length arr;
+    in
+    if index < len && index >= 0 then
+      let
+        # :: Array a
+        newArr =
+          builtins.genList (i: if i == index then a else builtins.elemAt arr i) len;
+
+        # :: STReturn (Array a)
+        ret' = stWrite newArr id newState;
+
+        # :: STState
+        newState' = ret'.state;
+      in
+      { res = true; state = newState'; }
+    else
+      { res = false; state = newState; };
+
+  # :: forall h a
+  #  . (forall b. b -> Maybe b)
+  # -> (forall b. Maybe b)
+  # -> STArray h a
+  # -> ST h (Maybe a)
+  popImpl = Just: Nothing: id: state:
+    let
+      # :: STReturn (Array a)
+      ret = stRead id state;
+
+      # :: STState
+      newState = ret.state;
+
+      # :: Array a
+      arr = ret.res;
+
+      # :: Int
+      len = builtins.length arr;
+    in
+    if len > 0 then
+      let
+        # :: Array a
+        newArr = builtins.genList (i: builtins.elemAt arr i) (len - 1);
+
+        # :: STReturn (Array a)
+        ret' = stWrite newArr id newState;
+
+        # :: STState
+        newState' = ret'.state;
+      in
+      { res = Just (builtins.elemAt arr (len - 1)); state = newState'; }
+    else
+      { res = Nothing; state = newState; };
+
+  # :: forall h a
+  #  . Array a
+  # -> STArray h a
+  # -> ST h Int
+  pushAll = as: id: state:
+    let
+      # :: STReturn (Array a)
+      ret = stRead id state;
+
+      # :: STState
+      newState = ret.state;
+
+      # :: Array a
+      arr = ret.res;
+
+      # :: Array a
+      newArr = arr ++ as;
+
+      # :: Int
+      newLen = builtins.length newArr;
+
+      # :: STReturn (Array a)
+      ret' = stWrite newArr id newState;
+
+      # :: STState
+      newState' = ret'.state;
+    in
+    { res = newLen; state = newState'; };
+
+  # :: forall h a
+  #  . Array a
+  # -> STArray h a
+  # -> ST h Int
+  unshiftAll = as: id: state:
+    let
+      # :: STReturn (Array a)
+      ret = stRead id state;
+
+      # :: STState
+      newState = ret.state;
+
+      # :: Array a
+      arr = ret.res;
+
+      # :: Array a
+      newArr = as ++ arr;
+
+      # :: Int
+      newLen = builtins.length newArr;
+
+      # :: STReturn (Array a)
+      ret' = stWrite newArr id newState;
+
+      # :: STState
+      newState' = ret'.state;
+    in
+    { res = newLen; state = newState'; };
+
+  # :: forall h a. STArray h a -> ST h (Array (Assoc a))
+  toAssocArray = id: state:
+    let
+      # :: STReturn (Array a)
+      ret = stRead id state;
+
+      # :: STState
+      newState = ret.state;
+
+      # :: Array a
+      arr = ret.res;
+
+      # :: Array a
+      resArray =
+        builtins.genList
+          (index: { value = builtins.elemAt arr index; inherit index; } )
+          (builtins.length arr);
+    in
+    { res = resArray; state = newState; };
+}
+
+;
+
+Data-Array_default-nix = 
+let
+  module = 
+    { "Control.Alt" = Control-Alt_default-nix;
+      "Control.Alternative" = Control-Alternative_default-nix;
+      "Control.Applicative" = Control-Applicative_default-nix;
+      "Control.Apply" = Control-Apply_default-nix;
+      "Control.Bind" = Control-Bind_default-nix;
+      "Control.Category" = Control-Category_default-nix;
+      "Control.Lazy" = Control-Lazy_default-nix;
+      "Control.Monad.ST" = Control-Monad-ST_default-nix;
+      "Control.Monad.ST.Internal" = Control-Monad-ST-Internal_default-nix;
+      "Control.Semigroupoid" = Control-Semigroupoid_default-nix;
+      "Data.Array.NonEmpty.Internal" = Data-Array-NonEmpty-Internal_default-nix;
+      "Data.Array.ST" = Data-Array-ST_default-nix;
+      "Data.Array.ST.Iterator" = Data-Array-ST-Iterator_default-nix;
+      "Data.Boolean" = Data-Boolean_default-nix;
+      "Data.Eq" = Data-Eq_default-nix;
+      "Data.Foldable" = Data-Foldable_default-nix;
+      "Data.Function" = Data-Function_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.HeytingAlgebra" = Data-HeytingAlgebra_default-nix;
+      "Data.Maybe" = Data-Maybe_default-nix;
+      "Data.Ord" = Data-Ord_default-nix;
+      "Data.Ordering" = Data-Ordering_default-nix;
+      "Data.Ring" = Data-Ring_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+      "Data.Semiring" = Data-Semiring_default-nix;
+      "Data.Traversable" = Data-Traversable_default-nix;
+      "Data.Tuple" = Data-Tuple_default-nix;
+      "Data.Unfoldable" = Data-Unfoldable_default-nix;
+      "Partial.Unsafe" = Partial-Unsafe_default-nix;
+      "Prelude" = Prelude_default-nix;
+      "Prim.TypeError" = import ../Prim.TypeError;
+    };
+  foreign = Data-Array_foreign-nix;
+  fromFoldableImpl = foreign.fromFoldableImpl;
+  range = foreign.range;
+  replicate = foreign.replicate;
+  length = foreign.length;
+  unconsImpl = foreign.unconsImpl;
+  indexImpl = foreign.indexImpl;
+  findMapImpl = foreign.findMapImpl;
+  findIndexImpl = foreign.findIndexImpl;
+  findLastIndexImpl = foreign.findLastIndexImpl;
+  _insertAt = foreign._insertAt;
+  _deleteAt = foreign._deleteAt;
+  _updateAt = foreign._updateAt;
+  reverse = foreign.reverse;
+  concat = foreign.concat;
+  filter = foreign.filter;
+  partition = foreign.partition;
+  scanl = foreign.scanl;
+  scanr = foreign.scanr;
+  sortByImpl = foreign.sortByImpl;
+  slice = foreign.slice;
+  zipWith = foreign.zipWith;
+  any = foreign.any;
+  all = foreign.all;
+  unsafeIndexImpl = foreign.unsafeIndexImpl;
+  zipWithA = dictApplicative: f: xs: ys: module."Data.Traversable".sequence module."Data.Traversable".traversableArray dictApplicative (zipWith f xs ys);
+  zip = zipWith module."Data.Tuple".Tuple;
+  updateAtIndices = dictFoldable: us: xs: module."Control.Monad.ST.Internal".run 
+    ( module."Data.Array.ST".withArray 
+      ( res: module."Data.Foldable".traverse_ module."Control.Monad.ST.Internal".applicativeST dictFoldable 
+        ( v: 
+          let
+            __pattern0 = __fail: 
+              if v.__tag == "Tuple"
+                then 
+                  let
+                    i = v.__field0;
+                    a = v.__field1;
+                  in
+                    module."Data.Array.ST".poke i a res
+                else __fail;
+            __patternFail = builtins.throw "Pattern match failure in .spago/arrays/cce2d13db0877d208a0cdc57c0e12d60e2b02cfb/src/Data/Array.purs at 756:45 - 756:77";
+          in
+            __pattern0 __patternFail
+        ) us
+      ) xs
+    );
+  updateAt = _updateAt module."Data.Maybe".Just module."Data.Maybe".Nothing;
+  unsafeIndex = dictPartial: unsafeIndexImpl;
+  uncons = unconsImpl (module."Data.Function".const module."Data.Maybe".Nothing) 
+    ( x: xs: module."Data.Maybe".Just 
+      { head = x;
+        tail = xs;
+      }
+    );
+  toUnfoldable = dictUnfoldable: xs: 
+    let
+      len = length xs;
+      f = i: 
+        let
+          __pattern0 = __fail: 
+            let
+              i1 = i;
+            in
+              if module."Data.Ord".lessThan module."Data.Ord".ordInt i1 len then module."Data.Maybe".Just (module."Data.Tuple".Tuple (module."Partial.Unsafe".unsafePartial (dictPartial: unsafeIndex module."Prim".undefined xs i1)) (module."Data.Semiring".add module."Data.Semiring".semiringInt i1 1)) else if module."Data.Boolean".otherwise then module."Data.Maybe".Nothing else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/arrays/cce2d13db0877d208a0cdc57c0e12d60e2b02cfb/src/Data/Array.purs at 158:3 - 160:26";
+        in
+          __pattern0 __patternFail;
+    in
+      module."Data.Unfoldable".unfoldr dictUnfoldable f 0;
+  take = n: xs: 
+    let
+      __pattern0 = __fail: if module."Data.Ord".lessThan module."Data.Ord".ordInt n 1 then [] else __fail;
+      __pattern1 = __fail: slice 0 n xs;
+      __patternFail = builtins.throw "Pattern match failure in .spago/arrays/cce2d13db0877d208a0cdc57c0e12d60e2b02cfb/src/Data/Array.purs at 876:13 - 876:47";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  tail = unconsImpl (module."Data.Function".const module."Data.Maybe".Nothing) (v: xs: module."Data.Maybe".Just xs);
+  splitAt = i: xs: 
+    let
+      __pattern0 = __fail: 
+        let
+          i1 = i;
+          xs1 = xs;
+        in
+          
+          if module."Data.Ord".lessThanOrEq module."Data.Ord".ordInt i1 0
+            then 
+              { before = [];
+                after = xs1;
+              }
+            else __fail;
+      __pattern1 = __fail: 
+        let
+          i1 = i;
+          xs1 = xs;
+        in
+          
+          { before = slice 0 i1 xs1;
+            after = slice i1 (length xs1) xs1;
+          };
+      __patternFail = builtins.throw "Pattern match failure in .spago/arrays/cce2d13db0877d208a0cdc57c0e12d60e2b02cfb/src/Data/Array.purs at 692:1 - 692:79";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  sortBy = comp: sortByImpl comp 
+    ( v: 
+      let
+        __pattern0 = __fail: if v.__tag == "GT" then 1 else __fail;
+        __pattern1 = __fail: if v.__tag == "EQ" then 0 else __fail;
+        __pattern2 = __fail: if v.__tag == "LT" then module."Data.Ring".negate module."Data.Ring".ringInt 1 else __fail;
+        __patternFail = builtins.throw "Pattern match failure in .spago/arrays/cce2d13db0877d208a0cdc57c0e12d60e2b02cfb/src/Data/Array.purs at 831:31 - 834:11";
+      in
+        __pattern0 (__pattern1 (__pattern2 __patternFail))
+    );
+  sortWith = dictOrd: f: sortBy (module."Data.Ord".comparing dictOrd f);
+  sort = dictOrd: xs: sortBy (module."Data.Ord".compare dictOrd) xs;
+  snoc = xs: x: module."Control.Monad.ST.Internal".run (module."Data.Array.ST".withArray (module."Data.Array.ST".push x) xs);
+  singleton = a: [a];
+  null = xs: module."Data.Eq".eq module."Data.Eq".eqInt (length xs) 0;
+  nubByEq = eq: xs: module."Control.Monad.ST.Internal".run (module."Control.Bind".bind module."Control.Monad.ST.Internal".bindST module."Data.Array.ST".new (arr: module."Control.Bind".discard module."Control.Bind".discardUnit module."Control.Monad.ST.Internal".bindST (module."Control.Monad.ST.Internal".foreach xs (x: module."Control.Bind".bind module."Control.Monad.ST.Internal".bindST (module."Data.Functor".map module."Control.Monad.ST.Internal".functorST (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Data.HeytingAlgebra".not module."Data.HeytingAlgebra".heytingAlgebraBoolean) (any (v: eq v x))) (module."Data.Array.ST".unsafeFreeze arr)) (e: module."Data.Function".apply (module."Control.Applicative".when module."Control.Monad.ST.Internal".applicativeST e) (module."Data.Function".apply (module."Data.Functor".void module."Control.Monad.ST.Internal".functorST) (module."Data.Array.ST".push x arr))))) (__unused: module."Data.Array.ST".unsafeFreeze arr)));
+  nubEq = dictEq: nubByEq (module."Data.Eq".eq dictEq);
+  modifyAtIndices = dictFoldable: is: f: xs: module."Control.Monad.ST.Internal".run (module."Data.Array.ST".withArray (res: module."Data.Foldable".traverse_ module."Control.Monad.ST.Internal".applicativeST dictFoldable (i: module."Data.Array.ST".modify i f res) is) xs);
+  mapWithIndex = f: xs: zipWith f (range 0 (module."Data.Ring".sub module."Data.Ring".ringInt (length xs) 1)) xs;
+  intersperse = a: arr: 
+    let
+      v = length arr;
+    in
+      
+      let
+        __pattern0 = __fail: 
+          let
+            len = v;
+          in
+            
+            if module."Data.Ord".lessThan module."Data.Ord".ordInt len 2
+              then arr
+              else 
+                if module."Data.Boolean".otherwise
+                  then module."Data.Array.ST".run 
+                    ( 
+                      let
+                        unsafeGetElem = idx: module."Partial.Unsafe".unsafePartial (dictPartial: unsafeIndex module."Prim".undefined arr idx);
+                      in
+                        module."Control.Bind".bind module."Control.Monad.ST.Internal".bindST module."Data.Array.ST".new (out: module."Control.Bind".bind module."Control.Monad.ST.Internal".bindST (module."Data.Array.ST".push (unsafeGetElem 0) out) (__unused: module."Control.Bind".discard module."Control.Bind".discardUnit module."Control.Monad.ST.Internal".bindST (module."Control.Monad.ST.Internal".for 1 len (idx: module."Control.Bind".bind module."Control.Monad.ST.Internal".bindST (module."Data.Array.ST".push a out) (__unused: module."Data.Functor".void module."Control.Monad.ST.Internal".functorST (module."Data.Array.ST".push (unsafeGetElem idx) out)))) (__unused: module."Control.Applicative".pure module."Control.Monad.ST.Internal".applicativeST out)))
+                    )
+                  else __fail;
+        __patternFail = builtins.throw "Pattern match failure in .spago/arrays/cce2d13db0877d208a0cdc57c0e12d60e2b02cfb/src/Data/Array.purs at 613:21 - 622:19";
+      in
+        __pattern0 __patternFail;
+  intercalate = dictMonoid: module."Data.Foldable".intercalate module."Data.Foldable".foldableArray dictMonoid;
+  insertAt = _insertAt module."Data.Maybe".Just module."Data.Maybe".Nothing;
+  init = xs: 
+    let
+      __pattern0 = __fail: 
+        let
+          xs1 = xs;
+        in
+          if null xs1 then module."Data.Maybe".Nothing else if module."Data.Boolean".otherwise then module."Data.Maybe".Just (slice (module."Data.Semiring".zero module."Data.Semiring".semiringInt) (module."Data.Ring".sub module."Data.Ring".ringInt (length xs1) (module."Data.Semiring".one module."Data.Semiring".semiringInt)) xs1) else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/arrays/cce2d13db0877d208a0cdc57c0e12d60e2b02cfb/src/Data/Array.purs at 340:1 - 340:45";
+    in
+      __pattern0 __patternFail;
+  index = indexImpl module."Data.Maybe".Just module."Data.Maybe".Nothing;
+  last = xs: index xs (module."Data.Ring".sub module."Data.Ring".ringInt (length xs) 1);
+  unsnoc = xs: module."Control.Apply".apply module."Data.Maybe".applyMaybe 
+    ( module."Data.Functor".map module."Data.Maybe".functorMaybe 
+      ( v: v1: 
+        { init = v;
+          last = v1;
+        }
+      ) (init xs)
+    ) (last xs);
+  modifyAt = i: f: xs: 
+    let
+      go = x: updateAt i (f x) xs;
+    in
+      module."Data.Maybe".maybe module."Data.Maybe".Nothing go (index xs i);
+  span = p: arr: 
+    let
+      go = i: 
+        let
+          v = index arr i;
+        in
+          
+          let
+            __pattern0 = __fail: 
+              if v.__tag == "Just"
+                then 
+                  let
+                    x = v.__field0;
+                  in
+                    
+                    let
+                      __pattern0 = __fail: if p x then go (module."Data.Semiring".add module."Data.Semiring".semiringInt i 1) else __fail;
+                      __pattern1 = __fail: module."Data.Maybe".Just i;
+                      __patternFail = builtins.throw "Pattern match failure in .spago/arrays/cce2d13db0877d208a0cdc57c0e12d60e2b02cfb/src/Data/Array.purs at 967:17 - 967:51";
+                    in
+                      __pattern0 (__pattern1 __patternFail)
+                else __fail;
+            __pattern1 = __fail: if v.__tag == "Nothing" then module."Data.Maybe".Nothing else __fail;
+            __patternFail = builtins.throw "Pattern match failure in .spago/arrays/cce2d13db0877d208a0cdc57c0e12d60e2b02cfb/src/Data/Array.purs at 966:5 - 968:25";
+          in
+            __pattern0 (__pattern1 __patternFail);
+      breakIndex = go 0;
+    in
+      
+      let
+        __pattern0 = __fail: 
+          if breakIndex.__tag == "Just" && breakIndex.__field0 == 0
+            then 
+              { init = [];
+                rest = arr;
+              }
+            else __fail;
+        __pattern1 = __fail: 
+          if breakIndex.__tag == "Just"
+            then 
+              let
+                i = breakIndex.__field0;
+              in
+                
+                { init = slice 0 i arr;
+                  rest = slice i (length arr) arr;
+                }
+            else __fail;
+        __pattern2 = __fail: 
+          if breakIndex.__tag == "Nothing"
+            then 
+              { init = arr;
+                rest = [];
+              }
+            else __fail;
+        __patternFail = builtins.throw "Pattern match failure in .spago/arrays/cce2d13db0877d208a0cdc57c0e12d60e2b02cfb/src/Data/Array.purs at 953:3 - 959:30";
+      in
+        __pattern0 (__pattern1 (__pattern2 __patternFail));
+  takeWhile = p: xs: (span p xs).init;
+  unzip = xs: module."Control.Monad.ST.Internal".run 
+    ( module."Control.Bind".bind module."Control.Monad.ST.Internal".bindST module."Data.Array.ST".new 
+      ( fsts: module."Control.Bind".bind module."Control.Monad.ST.Internal".bindST module."Data.Array.ST".new 
+        ( snds: module."Control.Bind".bind module."Control.Monad.ST.Internal".bindST (module."Data.Array.ST.Iterator".iterator (v: index xs v)) 
+          ( iter: module."Control.Bind".discard module."Control.Bind".discardUnit module."Control.Monad.ST.Internal".bindST 
+            ( module."Data.Array.ST.Iterator".iterate iter 
+              ( v: 
+                let
+                  __pattern0 = __fail: 
+                    if v.__tag == "Tuple"
+                      then 
+                        let
+                          fst = v.__field0;
+                          snd = v.__field1;
+                        in
+                          module."Control.Bind".discard module."Control.Bind".discardUnit module."Control.Monad.ST.Internal".bindST (module."Data.Function".apply (module."Data.Functor".void module."Control.Monad.ST.Internal".functorST) (module."Data.Array.ST".push fst fsts)) (__unused: module."Data.Function".apply (module."Data.Functor".void module."Control.Monad.ST.Internal".functorST) (module."Data.Array.ST".push snd snds))
+                      else __fail;
+                  __patternFail = builtins.throw "Pattern match failure in .spago/arrays/cce2d13db0877d208a0cdc57c0e12d60e2b02cfb/src/Data/Array.purs at 1229:23 - 1231:31";
+                in
+                  __pattern0 __patternFail
+              )
+            ) (__unused: module."Control.Bind".bind module."Control.Monad.ST.Internal".bindST (module."Data.Array.ST".unsafeFreeze fsts) (fsts': module."Control.Bind".bind module."Control.Monad.ST.Internal".bindST (module."Data.Array.ST".unsafeFreeze snds) (snds': module."Data.Function".apply (module."Control.Applicative".pure module."Control.Monad.ST.Internal".applicativeST) (module."Data.Tuple".Tuple fsts' snds'))))
+          )
+        )
+      )
+    );
+  head = xs: index xs 0;
+  nubBy = comp: xs: 
+    let
+      indexedAndSorted = sortBy (x: y: comp (module."Data.Tuple".snd x) (module."Data.Tuple".snd y)) (mapWithIndex module."Data.Tuple".Tuple xs);
+    in
+      
+      let
+        v = head indexedAndSorted;
+      in
+        
+        let
+          __pattern0 = __fail: if v.__tag == "Nothing" then [] else __fail;
+          __pattern1 = __fail: 
+            if v.__tag == "Just"
+              then 
+                let
+                  x = v.__field0;
+                in
+                  module."Data.Function".apply (module."Data.Functor".map module."Data.Functor".functorArray module."Data.Tuple".snd) 
+                  ( module."Data.Function".apply (sortWith module."Data.Ord".ordInt module."Data.Tuple".fst) 
+                    ( module."Control.Monad.ST.Internal".run 
+                      ( module."Control.Bind".bind module."Control.Monad.ST.Internal".bindST (module."Data.Function".apply module."Data.Array.ST".unsafeThaw (singleton x)) 
+                        ( result: module."Control.Bind".discard module."Control.Bind".discardUnit module."Control.Monad.ST.Internal".bindST 
+                          ( module."Control.Monad.ST.Internal".foreach indexedAndSorted 
+                            ( v1: 
+                              let
+                                __pattern0 = __fail: 
+                                  if v1.__tag == "Tuple"
+                                    then 
+                                      let
+                                        pair = v1;
+                                        x' = v1.__field1;
+                                      in
+                                        module."Control.Bind".bind module."Control.Monad.ST.Internal".bindST (module."Data.Functor".map module."Control.Monad.ST.Internal".functorST (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."Data.Tuple".snd (module."Partial.Unsafe".unsafePartial (dictPartial: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Data.Maybe".fromJust module."Prim".undefined) last))) (module."Data.Array.ST".unsafeFreeze result)) (lst: module."Data.Function".apply (module."Control.Applicative".when module."Control.Monad.ST.Internal".applicativeST (module."Data.Eq".notEq module."Data.Ordering".eqOrdering (comp lst x') module."Data.Ordering".EQ)) (module."Data.Function".apply (module."Data.Functor".void module."Control.Monad.ST.Internal".functorST) (module."Data.Array.ST".push pair result)))
+                                    else __fail;
+                                __patternFail = builtins.throw "Pattern match failure in .spago/arrays/cce2d13db0877d208a0cdc57c0e12d60e2b02cfb/src/Data/Array.purs at 1055:34 - 1057:62";
+                              in
+                                __pattern0 __patternFail
+                            )
+                          ) (__unused: module."Data.Array.ST".unsafeFreeze result)
+                        )
+                      )
+                    )
+                  )
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/arrays/cce2d13db0877d208a0cdc57c0e12d60e2b02cfb/src/Data/Array.purs at 1050:17 - 1058:29";
+        in
+          __pattern0 (__pattern1 __patternFail);
+  nub = dictOrd: nubBy (module."Data.Ord".compare dictOrd);
+  groupBy = op: xs: module."Control.Monad.ST.Internal".run (module."Control.Bind".bind module."Control.Monad.ST.Internal".bindST module."Data.Array.ST".new (result: module."Control.Bind".bind module."Control.Monad.ST.Internal".bindST (module."Data.Array.ST.Iterator".iterator (v: index xs v)) (iter: module."Control.Bind".discard module."Control.Bind".discardUnit module."Control.Monad.ST.Internal".bindST (module."Data.Array.ST.Iterator".iterate iter (x: module."Data.Functor".void module."Control.Monad.ST.Internal".functorST (module."Control.Bind".bind module."Control.Monad.ST.Internal".bindST module."Data.Array.ST".new (sub: module."Control.Bind".bind module."Control.Monad.ST.Internal".bindST (module."Data.Array.ST".push x sub) (__unused: module."Control.Bind".discard module."Control.Bind".discardUnit module."Control.Monad.ST.Internal".bindST (module."Data.Array.ST.Iterator".pushWhile (op x) iter sub) (__unused: module."Control.Bind".bind module."Control.Monad.ST.Internal".bindST (module."Data.Array.ST".unsafeFreeze sub) (grp: module."Data.Array.ST".push grp result))))))) (__unused: module."Data.Array.ST".unsafeFreeze result))));
+  groupAllBy = cmp: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (groupBy (x: y: module."Data.Eq".eq module."Data.Ordering".eqOrdering (cmp x y) module."Data.Ordering".EQ)) (sortBy cmp);
+  groupAll = dictOrd: groupAllBy (module."Data.Ord".compare dictOrd);
+  group' = dictWarn: dictOrd: groupAll dictOrd;
+  group = dictEq: xs: groupBy (module."Data.Eq".eq dictEq) xs;
+  fromFoldable = dictFoldable: fromFoldableImpl (module."Data.Foldable".foldr dictFoldable);
+  foldr = module."Data.Foldable".foldr module."Data.Foldable".foldableArray;
+  foldl = module."Data.Foldable".foldl module."Data.Foldable".foldableArray;
+  foldMap = dictMonoid: module."Data.Foldable".foldMap module."Data.Foldable".foldableArray dictMonoid;
+  foldM = dictMonad: f: b: unconsImpl (v: module."Control.Applicative".pure (dictMonad."Applicative0" module."Prim".undefined) b) (a: as: module."Control.Bind".bind (dictMonad."Bind1" module."Prim".undefined) (f b a) (b': foldM dictMonad f b' as));
+  fold = dictMonoid: module."Data.Foldable".fold module."Data.Foldable".foldableArray dictMonoid;
+  findMap = findMapImpl module."Data.Maybe".Nothing module."Data.Maybe".isJust;
+  findLastIndex = findLastIndexImpl module."Data.Maybe".Just module."Data.Maybe".Nothing;
+  insertBy = cmp: x: ys: 
+    let
+      i = module."Data.Maybe".maybe 0 (v: module."Data.Semiring".add module."Data.Semiring".semiringInt v 1) (findLastIndex (y: module."Data.Eq".eq module."Data.Ordering".eqOrdering (cmp x y) module."Data.Ordering".GT) ys);
+    in
+      module."Partial.Unsafe".unsafePartial (dictPartial: module."Data.Maybe".fromJust module."Prim".undefined (insertAt i x ys));
+  insert = dictOrd: insertBy (module."Data.Ord".compare dictOrd);
+  findIndex = findIndexImpl module."Data.Maybe".Just module."Data.Maybe".Nothing;
+  intersectBy = eq: xs: ys: filter (x: module."Data.Maybe".isJust (findIndex (eq x) ys)) xs;
+  intersect = dictEq: intersectBy (module."Data.Eq".eq dictEq);
+  find = f: xs: module."Data.Functor".map module."Data.Maybe".functorMaybe (module."Partial.Unsafe".unsafePartial (dictPartial: unsafeIndex module."Prim".undefined xs)) (findIndex f xs);
+  elemLastIndex = dictEq: x: findLastIndex (v: module."Data.Eq".eq dictEq v x);
+  elemIndex = dictEq: x: findIndex (v: module."Data.Eq".eq dictEq v x);
+  notElem = dictEq: a: arr: module."Data.Function".apply module."Data.Maybe".isNothing (elemIndex dictEq a arr);
+  elem = dictEq: a: arr: module."Data.Function".apply module."Data.Maybe".isJust (elemIndex dictEq a arr);
+  dropWhile = p: xs: (span p xs).rest;
+  dropEnd = n: xs: take (module."Data.Ring".sub module."Data.Ring".ringInt (length xs) n) xs;
+  drop = n: xs: 
+    let
+      __pattern0 = __fail: if module."Data.Ord".lessThan module."Data.Ord".ordInt n 1 then xs else __fail;
+      __pattern1 = __fail: slice n (length xs) xs;
+      __patternFail = builtins.throw "Pattern match failure in .spago/arrays/cce2d13db0877d208a0cdc57c0e12d60e2b02cfb/src/Data/Array.purs at 912:13 - 912:57";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  takeEnd = n: xs: drop (module."Data.Ring".sub module."Data.Ring".ringInt (length xs) n) xs;
+  deleteAt = _deleteAt module."Data.Maybe".Just module."Data.Maybe".Nothing;
+  deleteBy = v: v1: v2: 
+    let
+      __pattern0 = __fail: if builtins.length v2 == 0 then [] else __fail;
+      __pattern1 = __fail: 
+        let
+          eq = v;
+          x = v1;
+          ys = v2;
+        in
+          module."Data.Maybe".maybe ys (i: module."Data.Function".apply module."Partial.Unsafe".unsafePartial (dictPartial: module."Data.Maybe".fromJust module."Prim".undefined (deleteAt i ys))) (findIndex (eq x) ys);
+      __patternFail = builtins.throw "Pattern match failure in .spago/arrays/cce2d13db0877d208a0cdc57c0e12d60e2b02cfb/src/Data/Array.purs at 1128:1 - 1128:69";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  unionBy = eq: xs: ys: module."Data.Semigroup".append module."Data.Semigroup".semigroupArray xs (foldl (module."Data.Function".flip (deleteBy eq)) (nubByEq eq ys) xs);
+  union = dictEq: unionBy (module."Data.Eq".eq dictEq);
+  delete = dictEq: deleteBy (module."Data.Eq".eq dictEq);
+  difference = dictEq: foldr (delete dictEq);
+  cons = x: xs: module."Data.Semigroup".append module."Data.Semigroup".semigroupArray [x] xs;
+  some = dictAlternative: dictLazy: v: module."Control.Apply".apply ((dictAlternative."Applicative0" module."Prim".undefined)."Apply0" module."Prim".undefined) (module."Data.Functor".map (((dictAlternative."Plus1" module."Prim".undefined)."Alt0" module."Prim".undefined)."Functor0" module."Prim".undefined) cons v) (module."Control.Lazy".defer dictLazy (v1: many dictAlternative dictLazy v));
+  many = dictAlternative: dictLazy: v: module."Control.Alt".alt ((dictAlternative."Plus1" module."Prim".undefined)."Alt0" module."Prim".undefined) (some dictAlternative dictLazy v) (module."Control.Applicative".pure (dictAlternative."Applicative0" module."Prim".undefined) []);
+  concatMap = module."Data.Function".flip (module."Control.Bind".bind module."Control.Bind".bindArray);
+  mapMaybe = f: concatMap (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Data.Maybe".maybe [] singleton) f);
+  filterA = dictApplicative: p: module."Control.Semigroupoid".composeFlipped module."Control.Semigroupoid".semigroupoidFn (module."Data.Traversable".traverse module."Data.Traversable".traversableArray dictApplicative (x: module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) (module."Data.Tuple".Tuple x) (p x))) 
+    ( module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) 
+      ( mapMaybe 
+        ( v: 
+          let
+            __pattern0 = __fail: 
+              if v.__tag == "Tuple"
+                then 
+                  let
+                    x = v.__field0;
+                    b = v.__field1;
+                  in
+                    
+                    let
+                      __pattern0 = __fail: if b then module."Data.Maybe".Just x else __fail;
+                      __pattern1 = __fail: module."Data.Maybe".Nothing;
+                      __patternFail = builtins.throw "Pattern match failure in .spago/arrays/cce2d13db0877d208a0cdc57c0e12d60e2b02cfb/src/Data/Array.purs at 705:38 - 705:67";
+                    in
+                      __pattern0 (__pattern1 __patternFail)
+                else __fail;
+            __patternFail = builtins.throw "Pattern match failure in .spago/arrays/cce2d13db0877d208a0cdc57c0e12d60e2b02cfb/src/Data/Array.purs at 705:22 - 705:67";
+          in
+            __pattern0 __patternFail
+        )
+      )
+    );
+  catMaybes = mapMaybe (module."Control.Category".identity module."Control.Category".categoryFn);
+  alterAt = i: f: xs: 
+    let
+      go = x: 
+        let
+          v = f x;
+        in
+          
+          let
+            __pattern0 = __fail: if v.__tag == "Nothing" then deleteAt i xs else __fail;
+            __pattern1 = __fail: 
+              if v.__tag == "Just"
+                then 
+                  let
+                    x' = v.__field0;
+                  in
+                    updateAt i x' xs
+                else __fail;
+            __patternFail = builtins.throw "Pattern match failure in .spago/arrays/cce2d13db0877d208a0cdc57c0e12d60e2b02cfb/src/Data/Array.purs at 591:10 - 593:32";
+          in
+            __pattern0 (__pattern1 __patternFail);
+    in
+      module."Data.Maybe".maybe module."Data.Maybe".Nothing go (index xs i);
+in
+  {inherit fromFoldable toUnfoldable singleton range replicate some many null length cons snoc insert insertBy head last tail init uncons unsnoc index elem notElem elemIndex elemLastIndex find findMap findIndex findLastIndex insertAt deleteAt updateAt updateAtIndices modifyAt modifyAtIndices alterAt intersperse reverse concat concatMap filter partition splitAt filterA mapMaybe catMaybes mapWithIndex foldl foldr foldMap fold intercalate scanl scanr sort sortBy sortWith slice take takeEnd takeWhile drop dropEnd dropWhile span group groupAll group' groupBy groupAllBy nub nubEq nubBy nubByEq union unionBy delete deleteBy difference intersect intersectBy zipWith zipWithA zip unzip any all foldM unsafeIndex;}
+;
+
+Data-Array_foreign-nix = let
+  # :: (a -> b -> b) -> b -> [a] -> b
+  myfoldr = op: nul: list:
+    let
+      len = builtins.length list;
+      fold' = n:
+        if n == len
+        then nul
+        else op (builtins.elemAt list n) (fold' (n + 1));
+    in fold' 0;
+
+  # :: (Int -> a -> b -> b) -> b -> [a] -> b
+  myfoldri = op: nul: list:
+    let
+      len = builtins.length list;
+      fold' = n:
+        if n == len
+        then nul
+        else op n (builtins.elemAt list n) (fold' (n + 1));
+    in fold' 0;
+
+  # foldl but operating over the list in reverse.
+  #
+  # :: (b -> a -> b) -> b -> [a] -> b
+  myfoldl-rev = op: nul: list:
+    let
+      len = builtins.length list;
+      fold' = n: accum:
+        if n < 0
+        then accum
+        else fold' (n - 1) (op accum (builtins.elemAt list n));
+    in fold' (len - 1) nul;
+
+  # myfoldr but operating over the list in reverse.
+  #
+  # :: (a -> b -> b) -> b -> [a] -> b
+  myfoldr-rev = op: nul: list:
+    let
+      len = builtins.length list;
+      fold' = n:
+        if n < 0
+        then nul
+        else op (builtins.elemAt list n) (fold' (n - 1));
+    in fold' (len - 1);
+
+  # myfoldri but operating over the list in reverse.
+  #
+  # :: (Int -> a -> b -> b) -> b -> [a] -> b
+  myfoldri-rev = op: nul: list:
+    let
+      len = builtins.length list;
+      fold' = n:
+        if n < 0
+        then nul
+        else op n (builtins.elemAt list n) (fold' (n - 1));
+    in fold' (len - 1);
+in
+{
+  # :: forall f a
+  #  . (forall b. (a -> b -> b) -> b -> f a -> b)  # foldr
+  # -> f a
+  # -> Array a
+  fromFoldableImpl = foldr: xs:
+    foldr (a: b: [a] ++ b) [] xs;
+
+  # :: Int -> Int -> Array Int
+  range = start: end:
+    let
+      step = if start > end then -1 else 1;
+      len = (step * (end - start)) + 1;
+      indexToRangeVal = i: start + (i * step);
+    in
+    builtins.genList (i: indexToRangeVal i) len;
+
+  # :: forall a. Int -> a -> Array a
+  replicate = n: a:
+    if n < 0 then [] else builtins.genList (_: a) n;
+
+  # :: forall a. Array a -> Int
+  length = builtins.length;
+
+  # :: forall a b
+  #  . (Unit -> b)          # const Nothing
+  # -> (a -> Array a -> b)  # \x xs -> Just { head: x, tail: xs }
+  # -> Array a
+  # -> b
+  unconsImpl = emptyCase: consCase: arr:
+    if builtins.length arr == 0 then
+      emptyCase null
+    else
+      consCase (builtins.head arr) (builtins.tail arr);
+
+  # :: forall a
+  #  . (forall r. r -> Maybe r)  # Just
+  # -> (forall r. Maybe r)       # Nothing
+  # -> Array a
+  # -> Int
+  # -> Maybe a
+  indexImpl = Just: Nothing: arr: idx:
+    let
+      len = builtins.length arr;
+    in
+    if idx < 0 || idx >= len then
+      Nothing
+    else
+      Just (builtins.elemAt arr idx);
+
+  # :: forall a b
+  #  . (forall c. Maybe c)            # Nothing
+  # -> (forall c. Maybe c -> Boolean) # isJust
+  # -> (a -> Maybe b)
+  # -> Array a
+  # -> Maybe b
+  findMapImpl = Nothing: isJust: f: arr:
+    let
+      go = a: accum:
+        let
+          res = f a;
+        in
+        if isJust res then res else accum;
+    in
+    myfoldr go Nothing arr;
+
+  # :: forall a
+  #  . (forall b. b -> Maybe b)  # Just
+  # -> (forall b. Maybe b)       # Nothing
+  # -> (a -> Boolean)
+  # -> Array a
+  # -> Maybe Int
+  findIndexImpl = Just: Nothing: f: arr:
+    let
+      go = i: a: accum: if f a then Just i else accum;
+    in
+    myfoldri go Nothing arr;
+
+  # :: forall a
+  #  . (forall b. b -> Maybe b)  # Just
+  # -> (forall b. Maybe b)       # Nothing
+  # -> (a -> Boolean)
+  # -> Array a
+  # -> Maybe Int
+  findLastIndexImpl = Just: Nothing: f: arr:
+    let
+      go = i: a: accum: if f a then Just i else accum;
+    in
+    myfoldri-rev go Nothing arr;
+
+  # :: forall a
+  #  . (forall b. b -> Maybe b)  # Just
+  # -> (forall b. Maybe b)       # Nothing
+  # -> Int
+  # -> a
+  # -> Array a
+  # -> Maybe (Array a)
+  _insertAt = Just: Nothing: idx: a: arr:
+    let
+      len = builtins.length arr;
+
+      go = i:
+        if i < idx then
+          builtins.elemAt arr i
+        else if i == idx then
+          a
+        else
+          builtins.elemAt arr (i - 1);
+    in
+    if idx < 0 || idx > len then
+      Nothing
+    else
+      builtins.genList go (len + 1);
+
+  # :: forall a
+  #  . (forall b. b -> Maybe b) # Just
+  # -> (forall b. Maybe b)      # Nothing
+  # -> Int
+  # -> Array a
+  # -> Maybe (Array a)
+  _deleteAt = Just: Nothing: idx: arr:
+    let
+      len = builtins.length arr;
+
+      go = i:
+        if i < idx then
+          builtins.elemAt arr i
+        else
+          builtins.elemAt arr (i + 1);
+    in
+    if idx < 0 || idx >= len then
+      Nothing
+    else
+      builtins.genList go (len - 1);
+
+  # :: forall a
+  #  . (forall b. b -> Maybe b) # Just
+  # -> (forall b. Maybe b)      # Nothing
+  # -> Int
+  # -> a
+  # -> Array a
+  # -> Maybe (Array a)
+  _updateAt = Just: Nothing: idx: a: arr:
+    let
+      len = builtins.length arr;
+
+      go = i:
+        if i < idx || i > idx then
+          builtins.elemAt arr i
+        else
+          a;
+    in
+    if idx < 0 || idx >= len then
+      Nothing
+    else
+      builtins.genList go len;
+
+  # forall a. Array a -> Array a
+  reverse = arr:
+    let len = builtins.length arr;
+    in
+    builtins.genList (i: builtins.elemAt arr (len - i - 1)) len;
+
+  # :: forall a. Array (Array a) -> Array a
+  concat = builtins.concatLists;
+
+  # :: forall a. (a -> Boolean) -> Array a -> Array a
+  filter = builtins.filter;
+
+  # :: forall a
+  #  . (a -> Boolean)
+  # -> Array a
+  # -> { yes :: Array a, no :: Array a }
+  partition = f: arr:
+    let
+      res = builtins.partition f arr;
+    in
+    { yes = res.right; no = res.wrong; };
+
+  # :: forall a b. (b -> a -> b) -> b -> Array a -> Array b
+  scanl = f: b: arr:
+    let
+      len = builtins.length arr;
+    in
+    if len == 0 then
+      []
+    else
+      let
+        # :: a
+        h = builtins.head arr;
+
+        # :: Array a
+        t = builtins.tail arr;
+
+        # :: ListTuple b (Array b) -> a -> ListTuple b (Array b)
+        go = nextElemAndAccumList: a:
+          let
+            # :: b
+            prevElem = builtins.elemAt nextElemAndAccumList 0;
+
+            # :: Array b
+            accumArr = builtins.elemAt nextElemAndAccumList 1;
+
+            # :: b
+            nextElem = f prevElem a;
+          in
+          [nextElem (accumArr ++ [nextElem])];
+
+        # :: b
+        firstElem = f b h;
+
+        # :: ListTuple b (Array b)
+        accum = builtins.foldl' go [firstElem [firstElem]] t;
+      in
+      builtins.elemAt accum 1;
+
+  # :: forall a b. (a -> b -> b) -> b -> Array a -> Array b
+  scanr = f: b: arr:
+    let
+      len = builtins.length arr;
+    in
+    if len == 0 then
+      []
+    else
+      let
+        # :: a
+        last = builtins.elemAt arr (len - 1);
+
+        # :: Array a
+        init = builtins.genList (builtins.elemAt arr) (len - 1);
+
+        # :: ListTuple b (Array b) -> a -> ListTuple b (Array b)
+        go = nextElemAndAccumList: a:
+          let
+            # :: b
+            prevElem = builtins.elemAt nextElemAndAccumList 0;
+
+            # :: Array b
+            accumArr = builtins.elemAt nextElemAndAccumList 1;
+
+            # :: b
+            nextElem = f a prevElem;
+          in
+          [nextElem ([nextElem] ++ accumArr)];
+
+        # :: b
+        lastElem = f last b;
+
+        # :: ListTuple b (Array b)
+        accum = myfoldl-rev go [lastElem [lastElem]] init;
+      in
+      builtins.elemAt accum 1;
+
+  # :: forall a. (a -> a -> Ordering) -> (Ordering -> Int) -> Array a -> Array a
+  sortByImpl = comp: ord2Int: arr:
+    let
+      # :: a -> a -> Boolean
+      sortF = a: b: if ord2Int (comp a b) == -1 then true else false;
+    in
+    builtins.sort sortF arr;
+
+  # :: forall a. Int -> Int -> Array a -> Array a
+  slice = start: end: arr:
+    let
+      len = builtins.length arr;
+
+      start' = if start < 0 then 0 else start;
+
+      end' = if end > len then len else end;
+    in
+    if start' >= len || end' <= 0 || start' >= end then
+      []
+    else
+      let
+        newArrLen = end' - start';
+      in
+      builtins.genList (i: builtins.elemAt arr (start' + i)) newArrLen;
+
+  # :: forall a b c . (a -> b -> c) -> Array a -> Array b -> Array c
+  zipWith = f: arr1: arr2:
+    let
+      lenArr1 = builtins.length arr1;
+
+      lenArr2 = builtins.length arr2;
+
+      minLen = if lenArr1 < lenArr2 then lenArr1 else lenArr2;
+    in
+    builtins.genList (i: f (builtins.elemAt arr1 i) (builtins.elemAt arr2 i)) minLen;
+
+  # :: forall a. (a -> Boolean) -> Array a -> Boolean
+  any = builtins.any;
+
+  # :: forall a. (a -> Boolean) -> Array a -> Boolean
+  all = builtins.all;
+
+  # :: forall a. Array a -> Int -> a
+  unsafeIndexImpl = builtins.elemAt;
+}
+
 ;
 
 Data-Bifoldable_default-nix = 
@@ -11444,6 +13436,406 @@ in
   {inherit wrap unwrap un ala alaF over overF under underF over2 overF2 under2 underF2 traverse collect newtypeAdditive newtypeMultiplicative newtypeConj newtypeDisj newtypeDual newtypeEndo newtypeFirst newtypeLast;}
 ;
 
+Data-NonEmpty_default-nix = 
+let
+  module = 
+    { "Control.Alt" = Control-Alt_default-nix;
+      "Control.Alternative" = Control-Alternative_default-nix;
+      "Control.Applicative" = Control-Applicative_default-nix;
+      "Control.Apply" = Control-Apply_default-nix;
+      "Control.Plus" = Control-Plus_default-nix;
+      "Control.Semigroupoid" = Control-Semigroupoid_default-nix;
+      "Data.Eq" = Data-Eq_default-nix;
+      "Data.Foldable" = Data-Foldable_default-nix;
+      "Data.FoldableWithIndex" = Data-FoldableWithIndex_default-nix;
+      "Data.Function" = Data-Function_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.FunctorWithIndex" = Data-FunctorWithIndex_default-nix;
+      "Data.HeytingAlgebra" = Data-HeytingAlgebra_default-nix;
+      "Data.Maybe" = Data-Maybe_default-nix;
+      "Data.Ord" = Data-Ord_default-nix;
+      "Data.Ordering" = Data-Ordering_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+      "Data.Semigroup.Foldable" = Data-Semigroup-Foldable_default-nix;
+      "Data.Show" = Data-Show_default-nix;
+      "Data.Traversable" = Data-Traversable_default-nix;
+      "Data.TraversableWithIndex" = Data-TraversableWithIndex_default-nix;
+      "Data.Tuple" = Data-Tuple_default-nix;
+      "Data.Unfoldable" = Data-Unfoldable_default-nix;
+      "Data.Unfoldable1" = Data-Unfoldable1_default-nix;
+      "Prelude" = Prelude_default-nix;
+      "Prim.TypeError" = import ../Prim.TypeError;
+    };
+  NonEmpty = value0: value1: 
+    { __tag = "NonEmpty";
+      __field0 = value0;
+      __field1 = value1;
+    };
+  unfoldable1NonEmpty = dictUnfoldable: {unfoldr1 = f: b: module."Data.Function".apply (module."Data.Tuple".uncurry NonEmpty) (module."Data.Functor".map module."Data.Tuple".functorTuple (module."Data.Unfoldable".unfoldr dictUnfoldable (module."Data.Functor".map module."Data.Maybe".functorMaybe f)) (f b));};
+  tail = v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "NonEmpty"
+          then 
+            let
+              xs = v.__field1;
+            in
+              xs
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/nonempty/467f1cf3810b9697b6a69ed5db3d4631e044c876/src/Data/NonEmpty.purs at 120:1 - 120:40";
+    in
+      __pattern0 __patternFail;
+  singleton = dictPlus: a: NonEmpty a (module."Control.Plus".empty dictPlus);
+  showNonEmpty = dictShow: dictShow1: 
+    { show = v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "NonEmpty"
+              then 
+                let
+                  a = v.__field0;
+                  fa = v.__field1;
+                in
+                  module."Data.Semigroup".append module."Data.Semigroup".semigroupString "(NonEmpty " (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Show".show dictShow a) (module."Data.Semigroup".append module."Data.Semigroup".semigroupString " " (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Show".show dictShow1 fa) ")")))
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/nonempty/467f1cf3810b9697b6a69ed5db3d4631e044c876/src/Data/NonEmpty.purs at 123:1 - 124:67";
+        in
+          __pattern0 __patternFail;
+    };
+  oneOf = dictAlternative: v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "NonEmpty"
+          then 
+            let
+              a = v.__field0;
+              fa = v.__field1;
+            in
+              module."Control.Alt".alt ((dictAlternative."Plus1" module."Prim".undefined)."Alt0" module."Prim".undefined) (module."Control.Applicative".pure (dictAlternative."Applicative0" module."Prim".undefined) a) fa
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/nonempty/467f1cf3810b9697b6a69ed5db3d4631e044c876/src/Data/NonEmpty.purs at 104:1 - 104:58";
+    in
+      __pattern0 __patternFail;
+  head = v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "NonEmpty"
+          then 
+            let
+              x = v.__field0;
+            in
+              x
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/nonempty/467f1cf3810b9697b6a69ed5db3d4631e044c876/src/Data/NonEmpty.purs at 112:1 - 112:38";
+    in
+      __pattern0 __patternFail;
+  functorNonEmpty = dictFunctor: 
+    { map = f: m: 
+        let
+          __pattern0 = __fail: 
+            if m.__tag == "NonEmpty"
+              then 
+                let
+                  v = m.__field0;
+                  v1 = m.__field1;
+                in
+                  NonEmpty (f v) (module."Data.Functor".map dictFunctor f v1)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/nonempty/467f1cf3810b9697b6a69ed5db3d4631e044c876/src/Data/NonEmpty.purs at 134:1 - 134:69";
+        in
+          __pattern0 __patternFail;
+    };
+  functorWithIndex = dictFunctorWithIndex: 
+    { mapWithIndex = f: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "NonEmpty"
+              then 
+                let
+                  f1 = f;
+                  a = v.__field0;
+                  fa = v.__field1;
+                in
+                  NonEmpty (f1 module."Data.Maybe".Nothing a) (module."Data.FunctorWithIndex".mapWithIndex dictFunctorWithIndex (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn f1 module."Data.Maybe".Just) fa)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/nonempty/467f1cf3810b9697b6a69ed5db3d4631e044c876/src/Data/NonEmpty.purs at 136:1 - 139:73";
+        in
+          __pattern0 __patternFail;
+      "Functor0" = __unused: functorNonEmpty (dictFunctorWithIndex."Functor0" module."Prim".undefined);
+    };
+  fromNonEmpty = f: v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "NonEmpty"
+          then 
+            let
+              f1 = f;
+              a = v.__field0;
+              fa = v.__field1;
+            in
+              f1 a fa
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/nonempty/467f1cf3810b9697b6a69ed5db3d4631e044c876/src/Data/NonEmpty.purs at 89:1 - 89:67";
+    in
+      __pattern0 __patternFail;
+  foldableNonEmpty = dictFoldable: 
+    { foldMap = dictMonoid: f: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "NonEmpty"
+              then 
+                let
+                  f1 = f;
+                  a = v.__field0;
+                  fa = v.__field1;
+                in
+                  module."Data.Semigroup".append (dictMonoid."Semigroup0" module."Prim".undefined) (f1 a) (module."Data.Foldable".foldMap dictFoldable dictMonoid f1 fa)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/nonempty/467f1cf3810b9697b6a69ed5db3d4631e044c876/src/Data/NonEmpty.purs at 141:1 - 144:43";
+        in
+          __pattern0 __patternFail;
+      foldl = f: b: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "NonEmpty"
+              then 
+                let
+                  f1 = f;
+                  b1 = b;
+                  a = v.__field0;
+                  fa = v.__field1;
+                in
+                  module."Data.Foldable".foldl dictFoldable f1 (f1 b1 a) fa
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/nonempty/467f1cf3810b9697b6a69ed5db3d4631e044c876/src/Data/NonEmpty.purs at 141:1 - 144:43";
+        in
+          __pattern0 __patternFail;
+      foldr = f: b: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "NonEmpty"
+              then 
+                let
+                  f1 = f;
+                  b1 = b;
+                  a = v.__field0;
+                  fa = v.__field1;
+                in
+                  f1 a (module."Data.Foldable".foldr dictFoldable f1 b1 fa)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/nonempty/467f1cf3810b9697b6a69ed5db3d4631e044c876/src/Data/NonEmpty.purs at 141:1 - 144:43";
+        in
+          __pattern0 __patternFail;
+    };
+  foldableWithIndexNonEmpty = dictFoldableWithIndex: 
+    { foldMapWithIndex = dictMonoid: f: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "NonEmpty"
+              then 
+                let
+                  f1 = f;
+                  a = v.__field0;
+                  fa = v.__field1;
+                in
+                  module."Data.Semigroup".append (dictMonoid."Semigroup0" module."Prim".undefined) (f1 module."Data.Maybe".Nothing a) (module."Data.FoldableWithIndex".foldMapWithIndex dictFoldableWithIndex dictMonoid (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn f1 module."Data.Maybe".Just) fa)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/nonempty/467f1cf3810b9697b6a69ed5db3d4631e044c876/src/Data/NonEmpty.purs at 146:1 - 151:80";
+        in
+          __pattern0 __patternFail;
+      foldlWithIndex = f: b: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "NonEmpty"
+              then 
+                let
+                  f1 = f;
+                  b1 = b;
+                  a = v.__field0;
+                  fa = v.__field1;
+                in
+                  module."Data.FoldableWithIndex".foldlWithIndex dictFoldableWithIndex (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn f1 module."Data.Maybe".Just) (f1 module."Data.Maybe".Nothing b1 a) fa
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/nonempty/467f1cf3810b9697b6a69ed5db3d4631e044c876/src/Data/NonEmpty.purs at 146:1 - 151:80";
+        in
+          __pattern0 __patternFail;
+      foldrWithIndex = f: b: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "NonEmpty"
+              then 
+                let
+                  f1 = f;
+                  b1 = b;
+                  a = v.__field0;
+                  fa = v.__field1;
+                in
+                  f1 module."Data.Maybe".Nothing a (module."Data.FoldableWithIndex".foldrWithIndex dictFoldableWithIndex (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn f1 module."Data.Maybe".Just) b1 fa)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/nonempty/467f1cf3810b9697b6a69ed5db3d4631e044c876/src/Data/NonEmpty.purs at 146:1 - 151:80";
+        in
+          __pattern0 __patternFail;
+      "Foldable0" = __unused: foldableNonEmpty (dictFoldableWithIndex."Foldable0" module."Prim".undefined);
+    };
+  traversableNonEmpty = dictTraversable: 
+    { sequence = dictApplicative: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "NonEmpty"
+              then 
+                let
+                  a = v.__field0;
+                  fa = v.__field1;
+                in
+                  module."Control.Apply".apply (dictApplicative."Apply0" module."Prim".undefined) (module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) NonEmpty a) (module."Data.Traversable".sequence dictTraversable dictApplicative fa)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/nonempty/467f1cf3810b9697b6a69ed5db3d4631e044c876/src/Data/NonEmpty.purs at 153:1 - 155:60";
+        in
+          __pattern0 __patternFail;
+      traverse = dictApplicative: f: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "NonEmpty"
+              then 
+                let
+                  f1 = f;
+                  a = v.__field0;
+                  fa = v.__field1;
+                in
+                  module."Control.Apply".apply (dictApplicative."Apply0" module."Prim".undefined) (module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) NonEmpty (f1 a)) (module."Data.Traversable".traverse dictTraversable dictApplicative f1 fa)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/nonempty/467f1cf3810b9697b6a69ed5db3d4631e044c876/src/Data/NonEmpty.purs at 153:1 - 155:60";
+        in
+          __pattern0 __patternFail;
+      "Functor0" = __unused: functorNonEmpty (dictTraversable."Functor0" module."Prim".undefined);
+      "Foldable1" = __unused: foldableNonEmpty (dictTraversable."Foldable1" module."Prim".undefined);
+    };
+  traversableWithIndexNonEmpty = dictTraversableWithIndex: 
+    { traverseWithIndex = dictApplicative: f: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "NonEmpty"
+              then 
+                let
+                  f1 = f;
+                  a = v.__field0;
+                  fa = v.__field1;
+                in
+                  module."Control.Apply".apply (dictApplicative."Apply0" module."Prim".undefined) (module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) NonEmpty (f1 module."Data.Maybe".Nothing a)) (module."Data.TraversableWithIndex".traverseWithIndex dictTraversableWithIndex dictApplicative (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn f1 module."Data.Maybe".Just) fa)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/nonempty/467f1cf3810b9697b6a69ed5db3d4631e044c876/src/Data/NonEmpty.purs at 157:1 - 161:67";
+        in
+          __pattern0 __patternFail;
+      "FunctorWithIndex0" = __unused: functorWithIndex (dictTraversableWithIndex."FunctorWithIndex0" module."Prim".undefined);
+      "FoldableWithIndex1" = __unused: foldableWithIndexNonEmpty (dictTraversableWithIndex."FoldableWithIndex1" module."Prim".undefined);
+      "Traversable2" = __unused: traversableNonEmpty (dictTraversableWithIndex."Traversable2" module."Prim".undefined);
+    };
+  foldable1NonEmpty = dictFoldable: 
+    { foldMap1 = dictSemigroup: f: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "NonEmpty"
+              then 
+                let
+                  f1 = f;
+                  a = v.__field0;
+                  fa = v.__field1;
+                in
+                  module."Data.Foldable".foldl dictFoldable (s: a1: module."Data.Semigroup".append dictSemigroup s (f1 a1)) (f1 a) fa
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/nonempty/467f1cf3810b9697b6a69ed5db3d4631e044c876/src/Data/NonEmpty.purs at 163:1 - 166:36";
+        in
+          __pattern0 __patternFail;
+      foldr1 = f: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "NonEmpty"
+              then 
+                let
+                  f1 = f;
+                  a = v.__field0;
+                  fa = v.__field1;
+                in
+                  module."Data.Function".apply (module."Data.Maybe".maybe a (f1 a)) (module."Data.Foldable".foldr dictFoldable (a1: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."Data.Maybe".Just (module."Data.Maybe".maybe a1 (f1 a1))) module."Data.Maybe".Nothing fa)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/nonempty/467f1cf3810b9697b6a69ed5db3d4631e044c876/src/Data/NonEmpty.purs at 163:1 - 166:36";
+        in
+          __pattern0 __patternFail;
+      foldl1 = f: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "NonEmpty"
+              then 
+                let
+                  f1 = f;
+                  a = v.__field0;
+                  fa = v.__field1;
+                in
+                  module."Data.Foldable".foldl dictFoldable f1 a fa
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/nonempty/467f1cf3810b9697b6a69ed5db3d4631e044c876/src/Data/NonEmpty.purs at 163:1 - 166:36";
+        in
+          __pattern0 __patternFail;
+      "Foldable0" = __unused: foldableNonEmpty dictFoldable;
+    };
+  foldl1 = dictFoldable: dictWarn: module."Data.Semigroup.Foldable".foldl1 (foldable1NonEmpty dictFoldable);
+  eqNonEmpty = dictEq1: dictEq: 
+    { eq = x: y: 
+        let
+          __pattern0 = __fail: 
+            if x.__tag == "NonEmpty" && y.__tag == "NonEmpty"
+              then 
+                let
+                  l = x.__field0;
+                  l1 = x.__field1;
+                  r = y.__field0;
+                  r1 = y.__field1;
+                in
+                  module."Data.HeytingAlgebra".conj module."Data.HeytingAlgebra".heytingAlgebraBoolean (module."Data.Eq".eq dictEq l r) (module."Data.Eq".eq1 dictEq1 dictEq l1 r1)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/nonempty/467f1cf3810b9697b6a69ed5db3d4631e044c876/src/Data/NonEmpty.purs at 126:1 - 126:65";
+        in
+          __pattern0 __patternFail;
+    };
+  ordNonEmpty = dictOrd1: dictOrd: 
+    { compare = x: y: 
+        let
+          __pattern0 = __fail: 
+            if x.__tag == "NonEmpty" && y.__tag == "NonEmpty"
+              then 
+                let
+                  l = x.__field0;
+                  l1 = x.__field1;
+                  r = y.__field0;
+                  r1 = y.__field1;
+                in
+                  
+                  let
+                    v = module."Data.Ord".compare dictOrd l r;
+                  in
+                    
+                    let
+                      __pattern0 = __fail: if v.__tag == "LT" then module."Data.Ordering".LT else __fail;
+                      __pattern1 = __fail: if v.__tag == "GT" then module."Data.Ordering".GT else __fail;
+                      __pattern2 = __fail: module."Data.Ord".compare1 dictOrd1 dictOrd l1 r1;
+                      __patternFail = builtins.throw "Pattern match failure in .spago/nonempty/467f1cf3810b9697b6a69ed5db3d4631e044c876/src/Data/NonEmpty.purs at 130:1 - 130:69";
+                    in
+                      __pattern0 (__pattern1 (__pattern2 __patternFail))
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/nonempty/467f1cf3810b9697b6a69ed5db3d4631e044c876/src/Data/NonEmpty.purs at 130:1 - 130:69";
+        in
+          __pattern0 __patternFail;
+      "Eq0" = __unused: eqNonEmpty (dictOrd1."Eq10" module."Prim".undefined) (dictOrd."Eq0" module."Prim".undefined);
+    };
+  eq1NonEmpty = dictEq1: {eq1 = dictEq: module."Data.Eq".eq (eqNonEmpty dictEq1 dictEq);};
+  ord1NonEmpty = dictOrd1: 
+    { compare1 = dictOrd: module."Data.Ord".compare (ordNonEmpty dictOrd1 dictOrd);
+      "Eq10" = __unused: eq1NonEmpty (dictOrd1."Eq10" module."Prim".undefined);
+    };
+in
+  {inherit NonEmpty singleton foldl1 fromNonEmpty oneOf head tail showNonEmpty eqNonEmpty eq1NonEmpty ordNonEmpty ord1NonEmpty functorNonEmpty functorWithIndex foldableNonEmpty foldableWithIndexNonEmpty traversableNonEmpty traversableWithIndexNonEmpty foldable1NonEmpty unfoldable1NonEmpty;}
+;
+
 Data-Op_default-nix = 
 let
   module = 
@@ -16363,6 +18755,197 @@ in
   {inherit Tuple fst snd curry uncurry swap showTuple eqTuple eq1Tuple ordTuple ord1Tuple boundedTuple semigroupoidTuple semigroupTuple monoidTuple semiringTuple ringTuple commutativeRingTuple heytingAlgebraTuple booleanAlgebraTuple functorTuple genericTuple invariantTuple applyTuple applicativeTuple bindTuple monadTuple extendTuple comonadTuple lazyTuple;}
 ;
 
+Data-Unfoldable_default-nix = 
+let
+  module = 
+    { "Data.Function" = Data-Function_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.Maybe" = Data-Maybe_default-nix;
+      "Data.Ord" = Data-Ord_default-nix;
+      "Data.Ring" = Data-Ring_default-nix;
+      "Data.Traversable" = Data-Traversable_default-nix;
+      "Data.Tuple" = Data-Tuple_default-nix;
+      "Data.Unfoldable1" = Data-Unfoldable1_default-nix;
+      "Data.Unit" = Data-Unit_default-nix;
+      "Partial.Unsafe" = Partial-Unsafe_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  foreign = Data-Unfoldable_foreign-nix;
+  unfoldrArrayImpl = foreign.unfoldrArrayImpl;
+  Unfoldable-Dict = x: x;
+  unfoldr = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.unfoldr;
+      __patternFail = builtins.throw "Pattern match failure in .spago/unfoldable/3466c8e7d5554040f034ec792124e3271ea46e57/src/Data/Unfoldable.purs at 39:3 - 39:62";
+    in
+      __pattern0 __patternFail;
+  unfoldableMaybe = 
+    { unfoldr = f: b: module."Data.Functor".map module."Data.Maybe".functorMaybe module."Data.Tuple".fst (f b);
+      "Unfoldable10" = __unused: module."Data.Unfoldable1".unfoldable1Maybe;
+    };
+  unfoldableArray = 
+    { unfoldr = unfoldrArrayImpl module."Data.Maybe".isNothing (module."Partial.Unsafe".unsafePartial (dictPartial: module."Data.Maybe".fromJust module."Prim".undefined)) module."Data.Tuple".fst module."Data.Tuple".snd;
+      "Unfoldable10" = __unused: module."Data.Unfoldable1".unfoldable1Array;
+    };
+  replicate = dictUnfoldable: n: v: 
+    let
+      step = i: 
+        let
+          __pattern0 = __fail: if module."Data.Ord".lessThanOrEq module."Data.Ord".ordInt i 0 then module."Data.Maybe".Nothing else __fail;
+          __pattern1 = __fail: module."Data.Maybe".Just (module."Data.Tuple".Tuple v (module."Data.Ring".sub module."Data.Ring".ringInt i 1));
+          __patternFail = builtins.throw "Pattern match failure in .spago/unfoldable/3466c8e7d5554040f034ec792124e3271ea46e57/src/Data/Unfoldable.purs at 68:7 - 69:34";
+        in
+          __pattern0 (__pattern1 __patternFail);
+    in
+      unfoldr dictUnfoldable step n;
+  replicateA = dictApplicative: dictUnfoldable: dictTraversable: n: m: module."Data.Traversable".sequence dictTraversable dictApplicative (replicate dictUnfoldable n m);
+  none = dictUnfoldable: unfoldr dictUnfoldable (module."Data.Function".const module."Data.Maybe".Nothing) module."Data.Unit".unit;
+  fromMaybe = dictUnfoldable: unfoldr dictUnfoldable (b: module."Data.Functor".map module."Data.Maybe".functorMaybe (module."Data.Function".flip module."Data.Tuple".Tuple module."Data.Maybe".Nothing) b);
+in
+  
+  { inherit unfoldr replicate replicateA none fromMaybe unfoldableArray unfoldableMaybe;
+    inherit (module."Data.Unfoldable1") range replicate1 replicate1A singleton unfoldr1;
+  }
+;
+
+Data-Unfoldable_foreign-nix = {
+  # :: forall a b
+  #  . (forall x. Maybe x -> Boolean)  # isNothing
+  # -> (forall x. Maybe x -> x)        # fromJust
+  # -> (forall x y. Tuple x y -> x)    # fst
+  # -> (forall x y. Tuple x y -> y)    # snd
+  # -> (b -> Maybe (Tuple a b))
+  # -> b
+  # -> Array a
+  unfoldrArrayImpl = isNothing: fromJust: fst: snd: f: b:
+    let
+      # :: Array a -> Maybe (Tuple a b) -> Array a
+      go = accum: maybeRes:
+        if isNothing maybeRes then
+          accum
+        else
+          let
+            # :: Tuple a b
+            tup = fromJust maybeRes;
+            a = fst tup;
+            b = snd tup;
+          in
+          go (accum ++ [a]) (f b);
+    in
+    go [] (f b);
+}
+
+;
+
+Data-Unfoldable1_default-nix = 
+let
+  module = 
+    { "Data.Boolean" = Data-Boolean_default-nix;
+      "Data.Eq" = Data-Eq_default-nix;
+      "Data.Maybe" = Data-Maybe_default-nix;
+      "Data.Ord" = Data-Ord_default-nix;
+      "Data.Ring" = Data-Ring_default-nix;
+      "Data.Semigroup.Traversable" = Data-Semigroup-Traversable_default-nix;
+      "Data.Semiring" = Data-Semiring_default-nix;
+      "Data.Tuple" = Data-Tuple_default-nix;
+      "Partial.Unsafe" = Partial-Unsafe_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  foreign = Data-Unfoldable1_foreign-nix;
+  unfoldr1ArrayImpl = foreign.unfoldr1ArrayImpl;
+  Unfoldable1-Dict = x: x;
+  unfoldr1 = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.unfoldr1;
+      __patternFail = builtins.throw "Pattern match failure in .spago/unfoldable/3466c8e7d5554040f034ec792124e3271ea46e57/src/Data/Unfoldable1.purs at 39:3 - 39:63";
+    in
+      __pattern0 __patternFail;
+  unfoldable1Maybe = {unfoldr1 = f: b: module."Data.Maybe".Just (module."Data.Tuple".fst (f b));};
+  unfoldable1Array = {unfoldr1 = unfoldr1ArrayImpl module."Data.Maybe".isNothing (module."Partial.Unsafe".unsafePartial (dictPartial: module."Data.Maybe".fromJust module."Prim".undefined)) module."Data.Tuple".fst module."Data.Tuple".snd;};
+  replicate1 = dictUnfoldable1: n: v: 
+    let
+      step = i: 
+        let
+          __pattern0 = __fail: 
+            let
+              i1 = i;
+            in
+              if module."Data.Ord".lessThanOrEq module."Data.Ord".ordInt i1 0 then module."Data.Tuple".Tuple v module."Data.Maybe".Nothing else if module."Data.Boolean".otherwise then module."Data.Tuple".Tuple v (module."Data.Maybe".Just (module."Data.Ring".sub module."Data.Ring".ringInt i1 1)) else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/unfoldable/3466c8e7d5554040f034ec792124e3271ea46e57/src/Data/Unfoldable1.purs at 67:5 - 67:39";
+        in
+          __pattern0 __patternFail;
+    in
+      unfoldr1 dictUnfoldable1 step (module."Data.Ring".sub module."Data.Ring".ringInt n 1);
+  replicate1A = dictApply: dictUnfoldable1: dictTraversable1: n: m: module."Data.Semigroup.Traversable".sequence1 dictTraversable1 dictApply (replicate1 dictUnfoldable1 n m);
+  singleton = dictUnfoldable1: replicate1 dictUnfoldable1 1;
+  range = dictUnfoldable1: start: end: 
+    let
+      go = delta: i: 
+        let
+          i' = module."Data.Semiring".add module."Data.Semiring".semiringInt i delta;
+        in
+          module."Data.Tuple".Tuple i 
+          ( 
+            let
+              __pattern0 = __fail: if module."Data.Eq".eq module."Data.Eq".eqInt i end then module."Data.Maybe".Nothing else __fail;
+              __pattern1 = __fail: module."Data.Maybe".Just i';
+              __patternFail = builtins.throw "Pattern match failure in .spago/unfoldable/3466c8e7d5554040f034ec792124e3271ea46e57/src/Data/Unfoldable1.purs at 113:19 - 113:56";
+            in
+              __pattern0 (__pattern1 __patternFail)
+          );
+    in
+      
+      let
+        delta = 
+          let
+            __pattern0 = __fail: if module."Data.Ord".greaterThanOrEq module."Data.Ord".ordInt end start then 1 else __fail;
+            __pattern1 = __fail: module."Data.Ring".negate module."Data.Ring".ringInt 1;
+            __patternFail = builtins.throw "Pattern match failure in .spago/unfoldable/3466c8e7d5554040f034ec792124e3271ea46e57/src/Data/Unfoldable1.purs at 109:15 - 109:45";
+          in
+            __pattern0 (__pattern1 __patternFail);
+      in
+        unfoldr1 dictUnfoldable1 (go delta) start;
+in
+  {inherit unfoldr1 replicate1 replicate1A singleton range unfoldable1Array unfoldable1Maybe;}
+;
+
+Data-Unfoldable1_foreign-nix = {
+  # :: forall a b
+  #  . (forall x. Maybe x -> Boolean)  # isNothing
+  # -> (forall x. Maybe x -> x)        # fromJust
+  # -> (forall x y. Tuple x y -> x)    # fst
+  # -> (forall x y. Tuple x y -> y)    # snd
+  # -> (b -> Tuple a (Maybe b))
+  # -> b
+  # -> Array a
+  unfoldr1ArrayImpl = isNothing: fromJust: fst: snd: f: b:
+    let
+      # :: Array a -> Tuple a (Maybe b) -> Array a
+      go = accum: tup:
+        let
+          a = fst tup;
+          maybeB = snd tup;
+          newAccum = accum ++ [a];
+        in
+        if isNothing maybeB then
+          newAccum
+        else
+          go (accum ++ [a]) (f (fromJust maybeB));
+    in
+    go [] (f b);
+}
+
+
+;
+
 Data-Unit_default-nix = 
 let
   module = {"Data.Show" = Data-Show_default-nix;};
@@ -16398,6 +18981,109 @@ let
   showVoid = {show = absurd;};
 in
   {inherit absurd showVoid;}
+;
+
+DoctorNix_default-nix = 
+let
+  module = 
+    { "Data.Array" = Data-Array_default-nix;
+      "Data.Monoid" = Data-Monoid_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+      "Data.Tuple.Nested" = Data-Tuple-Nested_default-nix;
+      "Data.Unit" = Data-Unit_default-nix;
+      "Foreign" = Foreign_default-nix;
+      "Foreign.Object" = Foreign-Object_default-nix;
+      "Foreign.Path" = Foreign-Path_default-nix;
+      "LocalDependency.Unsafe.Coerce" = LocalDependency-Unsafe-Coerce_default-nix;
+      "Prelude" = Prelude_default-nix;
+      "Prim.RowList" = import ../Prim.RowList;
+      "Type.Proxy" = Type-Proxy_default-nix;
+    };
+  Attrs = value0: 
+    { __tag = "Attrs";
+      __field0 = value0;
+    };
+  Bool = {__tag = "Bool";};
+  Path = {__tag = "Path";};
+  Float = {__tag = "Float";};
+  Function = value0: value1: 
+    { __tag = "Function";
+      __field0 = value0;
+      __field1 = value1;
+    };
+  Int = {__tag = "Int";};
+  List = value0: 
+    { __tag = "List";
+      __field0 = value0;
+    };
+  Null = {__tag = "Null";};
+  String = {__tag = "String";};
+  Opaque = value0: value1: 
+    { __tag = "Opaque";
+      __field0 = value0;
+      __field1 = value1;
+    };
+  Any = {__tag = "Any";};
+  TypeVar = value0: 
+    { __tag = "TypeVar";
+      __field0 = value0;
+    };
+  Attrs' = value0: 
+    { __tag = "Attrs'";
+      __field0 = value0;
+    };
+  Attrs'' = {__tag = "Attrs''";};
+  ToNixType-Dict = x: x;
+  Foo-Dict = x: x;
+  unit = {toNixType = v: Null;};
+  toNixType = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.toNixType;
+      __patternFail = builtins.throw "Pattern match failure in src/DoctorNix.purs at 30:3 - 30:28";
+    in
+      __pattern0 __patternFail;
+  toNixType' = dictToNixType: v: toNixType dictToNixType (module."LocalDependency.Unsafe.Coerce".unsafeCoerce module."Data.Unit".unit);
+  string = {toNixType = v: String;};
+  render = v: 
+    let
+      __pattern0 = __fail: 
+        let
+          title = v.title;
+          types = v.types;
+          defs = v.defs;
+        in
+          module."Data.Array".fold module."Data.Monoid".monoidString [(module."Data.Semigroup".append module."Data.Semigroup".semigroupString "# " title)
+          ""];
+      __patternFail = builtins.throw "Pattern match failure in src/DoctorNix.purs at 82:1 - 82:28";
+    in
+      __pattern0 __patternFail;
+  path = {toNixType = v: Path;};
+  number = {toNixType = v: Float;};
+  nixType = {toNixType = x: x;};
+  int = {toNixType = v: Int;};
+  function = dictToNixType: dictToNixType1: {toNixType = v: Function (toNixType' dictToNixType module."Type.Proxy".Proxy) (toNixType' dictToNixType1 module."Type.Proxy".Proxy);};
+  foreign' = {toNixType = v: Any;};
+  foo = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.foo;
+      __patternFail = builtins.throw "Pattern match failure in src/DoctorNix.purs at 36:3 - 36:29";
+    in
+      __pattern0 __patternFail;
+  record = dictRowToList: dictFoo: {toNixType = v: foo dictFoo module."Type.Proxy".Proxy;};
+  boolean = {toNixType = v: Bool;};
+  attrs'' = {toNixType = v: Attrs'';};
+  attrs' = dictToNixType: {toNixType = v: Attrs' (toNixType' dictToNixType module."Type.Proxy".Proxy);};
+  array = dictToNixType: {toNixType = v: List (toNixType' dictToNixType module."Type.Proxy".Proxy);};
+in
+  {inherit foo toNixType Attrs Bool Path Float Function Int List Null String Opaque Any TypeVar Attrs' Attrs'' toNixType' render record boolean path number function int array unit string foreign' attrs'' attrs' nixType;}
 ;
 
 Effect_default-nix = 
@@ -16561,6 +19247,12277 @@ Foreign_foreign-nix = with builtins ; {
 
 ;
 
+LocalDependency-Control-Alt_default-nix = 
+let
+  module = 
+    { "Data.Functor" = Data-Functor_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+    };
+  Alt-Dict = x: x;
+  altArray = 
+    { alt = module."Data.Semigroup".append module."Data.Semigroup".semigroupArray;
+      "Functor0" = __unused: module."Data.Functor".functorArray;
+    };
+  alt = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.alt;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/control/Control/Alt.purs at 37:3 - 37:37";
+    in
+      __pattern0 __patternFail;
+in
+  
+  { inherit alt altArray;
+    inherit (module."Data.Functor") map void;
+  }
+;
+
+LocalDependency-Control-Alternative_default-nix = 
+let
+  module = 
+    { "Control.Applicative" = Control-Applicative_default-nix;
+      "Control.Apply" = Control-Apply_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.Unit" = Data-Unit_default-nix;
+      "LocalDependency.Control.Alt" = LocalDependency-Control-Alt_default-nix;
+      "LocalDependency.Control.Plus" = LocalDependency-Control-Plus_default-nix;
+    };
+  Alternative-Dict = x: x;
+  guard = dictAlternative: v: 
+    let
+      __pattern0 = __fail: if v then module."Control.Applicative".pure (dictAlternative."Applicative0" module."Prim".undefined) module."Data.Unit".unit else __fail;
+      __pattern1 = __fail: if !v then module."LocalDependency.Control.Plus".empty (dictAlternative."Plus1" module."Prim".undefined) else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/control/Control/Alternative.purs at 48:1 - 48:54";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  alternativeArray = 
+    { "Applicative0" = __unused: module."Control.Applicative".applicativeArray;
+      "Plus1" = __unused: module."LocalDependency.Control.Plus".plusArray;
+    };
+in
+  
+  { inherit guard alternativeArray;
+    inherit (module."Control.Applicative") liftA1 pure unless when;
+    inherit (module."Control.Apply") apply;
+    inherit (module."Data.Functor") map void;
+    inherit (module."LocalDependency.Control.Alt") alt;
+    inherit (module."LocalDependency.Control.Plus") empty;
+  }
+;
+
+LocalDependency-Control-Biapplicative_default-nix = 
+let
+  module = 
+    { "LocalDependency.Control.Biapply" = LocalDependency-Control-Biapply_default-nix;
+      "LocalDependency.Data.Tuple" = LocalDependency-Data-Tuple_default-nix;
+    };
+  Biapplicative-Dict = x: x;
+  bipure = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.bipure;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/bifunctors/Control/Biapplicative.purs at 9:3 - 9:40";
+    in
+      __pattern0 __patternFail;
+  biapplicativeTuple = 
+    { bipure = module."LocalDependency.Data.Tuple".Tuple;
+      "Biapply0" = __unused: module."LocalDependency.Control.Biapply".biapplyTuple;
+    };
+in
+  {inherit bipure biapplicativeTuple;}
+;
+
+LocalDependency-Control-Biapply_default-nix = 
+let
+  module = 
+    { "Control.Category" = Control-Category_default-nix;
+      "Data.Function" = Data-Function_default-nix;
+      "LocalDependency.Data.Bifunctor" = LocalDependency-Data-Bifunctor_default-nix;
+      "LocalDependency.Data.Tuple" = LocalDependency-Data-Tuple_default-nix;
+    };
+  Biapply-Dict = x: x;
+  biapplyTuple = 
+    { biapply = v: v1: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple" && v1.__tag == "Tuple"
+              then 
+                let
+                  f = v.__field0;
+                  g = v.__field1;
+                  a = v1.__field0;
+                  b = v1.__field1;
+                in
+                  module."LocalDependency.Data.Tuple".Tuple (f a) (g b)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/bifunctors/Control/Biapply.purs at 58:1 - 59:54";
+        in
+          __pattern0 __patternFail;
+      "Bifunctor0" = __unused: module."LocalDependency.Data.Bifunctor".bifunctorTuple;
+    };
+  biapply = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.biapply;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/bifunctors/Control/Biapply.purs at 19:3 - 19:67";
+    in
+      __pattern0 __patternFail;
+  biapplyFirst = dictBiapply: a: b: biapply dictBiapply (module."Control.Category".identity module."Control.Category".categoryFn (module."LocalDependency.Data.Bifunctor".bimap (dictBiapply."Bifunctor0" module."Prim".undefined) (module."Data.Function".const (module."Control.Category".identity module."Control.Category".categoryFn)) (module."Data.Function".const (module."Control.Category".identity module."Control.Category".categoryFn))) a) b;
+  biapplySecond = dictBiapply: a: b: biapply dictBiapply (module."Control.Category".identity module."Control.Category".categoryFn (module."LocalDependency.Data.Bifunctor".bimap (dictBiapply."Bifunctor0" module."Prim".undefined) module."Data.Function".const module."Data.Function".const) a) b;
+  bilift2 = dictBiapply: f: g: a: b: biapply dictBiapply (module."Control.Category".identity module."Control.Category".categoryFn (module."LocalDependency.Data.Bifunctor".bimap (dictBiapply."Bifunctor0" module."Prim".undefined) f g) a) b;
+  bilift3 = dictBiapply: f: g: a: b: c: biapply dictBiapply (biapply dictBiapply (module."Control.Category".identity module."Control.Category".categoryFn (module."LocalDependency.Data.Bifunctor".bimap (dictBiapply."Bifunctor0" module."Prim".undefined) f g) a) b) c;
+in
+  {inherit biapply biapplyFirst biapplySecond bilift2 bilift3 biapplyTuple;}
+;
+
+LocalDependency-Control-Comonad_default-nix = 
+let
+  module = 
+    { "Data.Functor" = Data-Functor_default-nix;
+      "LocalDependency.Control.Extend" = LocalDependency-Control-Extend_default-nix;
+    };
+  Comonad-Dict = x: x;
+  extract = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.extract;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/control/Control/Comonad.purs at 21:3 - 21:32";
+    in
+      __pattern0 __patternFail;
+in
+  
+  { inherit extract;
+    inherit (module."Data.Functor") map void;
+    inherit (module."LocalDependency.Control.Extend") duplicate extend;
+  }
+;
+
+LocalDependency-Control-Extend_default-nix = 
+let
+  module = 
+    { "Control.Category" = Control-Category_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+    };
+  foreign = LocalDependency-Control-Extend_foreign-nix;
+  arrayExtend = foreign.arrayExtend;
+  Extend-Dict = x: x;
+  extendFn = dictSemigroup: 
+    { extend = f: g: w: f (w': g (module."Data.Semigroup".append dictSemigroup w w'));
+      "Functor0" = __unused: module."Data.Functor".functorFn;
+    };
+  extendArray = 
+    { extend = arrayExtend;
+      "Functor0" = __unused: module."Data.Functor".functorArray;
+    };
+  extend = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.extend;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/control/Control/Extend.purs at 25:3 - 25:49";
+    in
+      __pattern0 __patternFail;
+  extendFlipped = dictExtend: w: f: extend dictExtend f w;
+  duplicate = dictExtend: extend dictExtend (module."Control.Category".identity module."Control.Category".categoryFn);
+  composeCoKleisliFlipped = dictExtend: f: g: w: f (extend dictExtend g w);
+  composeCoKleisli = dictExtend: f: g: w: g (extend dictExtend f w);
+in
+  
+  { inherit extend extendFlipped composeCoKleisli composeCoKleisliFlipped duplicate extendFn extendArray;
+    inherit (module."Data.Functor") map void;
+  }
+;
+
+LocalDependency-Control-Extend_foreign-nix = 
+let
+  # Drop the number of elements from the start of the list.
+  #
+  # > drop 3 [1 2 3 4 5 6 7]
+  # [4 5 6 7]
+  drop = i: xs:
+    builtins.genList (n: builtins.elemAt xs (n + i)) (builtins.length xs - i);
+in
+
+{ arrayExtend = f: xs: builtins.genList (n: f (drop n xs)) (builtins.length xs);
+}
+
+;
+
+LocalDependency-Control-Lazy_default-nix = 
+let
+  module = {"Data.Unit" = Data-Unit_default-nix;};
+  Lazy-Dict = x: x;
+  lazyUnit = {defer = v: module."Data.Unit".unit;};
+  lazyFn = {defer = f: x: f module."Data.Unit".unit x;};
+  defer = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.defer;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/control/Control/Lazy.purs at 11:3 - 11:28";
+    in
+      __pattern0 __patternFail;
+  fix = dictLazy: f: 
+    let
+      go = defer dictLazy (v: f go);
+    in
+      go;
+in
+  {inherit defer fix lazyFn lazyUnit;}
+;
+
+LocalDependency-Control-MonadPlus_default-nix = 
+let
+  module = 
+    { "Control.Applicative" = Control-Applicative_default-nix;
+      "Control.Apply" = Control-Apply_default-nix;
+      "Control.Bind" = Control-Bind_default-nix;
+      "Control.Monad" = Control-Monad_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "LocalDependency.Control.Alt" = LocalDependency-Control-Alt_default-nix;
+      "LocalDependency.Control.Alternative" = LocalDependency-Control-Alternative_default-nix;
+      "LocalDependency.Control.MonadZero" = LocalDependency-Control-MonadZero_default-nix;
+      "LocalDependency.Control.Plus" = LocalDependency-Control-Plus_default-nix;
+    };
+  MonadPlus-Dict = x: x;
+  monadPlusArray = 
+    { "Monad0" = __unused: module."Control.Monad".monadArray;
+      "Alternative1" = __unused: module."LocalDependency.Control.Alternative".alternativeArray;
+    };
+in
+  
+  { inherit monadPlusArray;
+    inherit (module."Control.Applicative") liftA1 pure unless when;
+    inherit (module."Control.Apply") apply;
+    inherit (module."Control.Bind") bind ifM join;
+    inherit (module."Control.Monad") ap liftM1;
+    inherit (module."Data.Functor") map void;
+    inherit (module."LocalDependency.Control.Alt") alt;
+    inherit (module."LocalDependency.Control.Alternative") guard;
+    inherit (module."LocalDependency.Control.MonadZero");
+    inherit (module."LocalDependency.Control.Plus") empty;
+  }
+;
+
+LocalDependency-Control-MonadZero_default-nix = 
+let
+  module = 
+    { "Control.Applicative" = Control-Applicative_default-nix;
+      "Control.Apply" = Control-Apply_default-nix;
+      "Control.Bind" = Control-Bind_default-nix;
+      "Control.Monad" = Control-Monad_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "LocalDependency.Control.Alt" = LocalDependency-Control-Alt_default-nix;
+      "LocalDependency.Control.Alternative" = LocalDependency-Control-Alternative_default-nix;
+      "LocalDependency.Control.Plus" = LocalDependency-Control-Plus_default-nix;
+      "Prim.TypeError" = import ../Prim.TypeError;
+    };
+  MonadZeroIsDeprecated-Dict = x: x;
+  MonadZero-Dict = x: x;
+  monadZeroIsDeprecated = dictWarn: { };
+  monadZeroArray = 
+    { "Monad0" = __unused: module."Control.Monad".monadArray;
+      "Alternative1" = __unused: module."LocalDependency.Control.Alternative".alternativeArray;
+      "MonadZeroIsDeprecated2" = __unused: module."Prim".undefined;
+    };
+in
+  
+  { inherit monadZeroIsDeprecated monadZeroArray;
+    inherit (module."Control.Applicative") liftA1 pure unless when;
+    inherit (module."Control.Apply") apply;
+    inherit (module."Control.Bind") bind ifM join;
+    inherit (module."Control.Monad") ap liftM1;
+    inherit (module."Data.Functor") map void;
+    inherit (module."LocalDependency.Control.Alt") alt;
+    inherit (module."LocalDependency.Control.Alternative") guard;
+    inherit (module."LocalDependency.Control.Plus") empty;
+  }
+;
+
+LocalDependency-Control-Plus_default-nix = 
+let
+  module = 
+    { "Data.Functor" = Data-Functor_default-nix;
+      "LocalDependency.Control.Alt" = LocalDependency-Control-Alt_default-nix;
+    };
+  Plus-Dict = x: x;
+  plusArray = 
+    { empty = [];
+      "Alt0" = __unused: module."LocalDependency.Control.Alt".altArray;
+    };
+  empty = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.empty;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/control/Control/Plus.purs at 24:3 - 24:25";
+    in
+      __pattern0 __patternFail;
+in
+  
+  { inherit empty plusArray;
+    inherit (module."Data.Functor") map void;
+    inherit (module."LocalDependency.Control.Alt") alt;
+  }
+;
+
+LocalDependency-Data-Bifoldable_default-nix = 
+let
+  module = 
+    { "Control.Applicative" = Control-Applicative_default-nix;
+      "Control.Apply" = Control-Apply_default-nix;
+      "Control.Category" = Control-Category_default-nix;
+      "Control.Semigroupoid" = Control-Semigroupoid_default-nix;
+      "Data.Function" = Data-Function_default-nix;
+      "Data.Monoid" = Data-Monoid_default-nix;
+      "Data.Monoid.Conj" = Data-Monoid-Conj_default-nix;
+      "Data.Monoid.Disj" = Data-Monoid-Disj_default-nix;
+      "Data.Monoid.Dual" = Data-Monoid-Dual_default-nix;
+      "Data.Monoid.Endo" = Data-Monoid-Endo_default-nix;
+      "Data.Newtype" = Data-Newtype_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+      "Data.Unit" = Data-Unit_default-nix;
+      "LocalDependency.Data.Const" = LocalDependency-Data-Const_default-nix;
+      "LocalDependency.Data.Either" = LocalDependency-Data-Either_default-nix;
+      "LocalDependency.Data.Foldable" = LocalDependency-Data-Foldable_default-nix;
+      "LocalDependency.Data.Functor.Clown" = LocalDependency-Data-Functor-Clown_default-nix;
+      "LocalDependency.Data.Functor.Flip" = LocalDependency-Data-Functor-Flip_default-nix;
+      "LocalDependency.Data.Functor.Joker" = LocalDependency-Data-Functor-Joker_default-nix;
+      "LocalDependency.Data.Functor.Product2" = LocalDependency-Data-Functor-Product2_default-nix;
+      "LocalDependency.Data.Tuple" = LocalDependency-Data-Tuple_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  Bifoldable-Dict = x: x;
+  bifoldr = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.bifoldr;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Bifoldable.purs at 38:3 - 38:77";
+    in
+      __pattern0 __patternFail;
+  bitraverse_ = dictBifoldable: dictApplicative: f: g: bifoldr dictBifoldable (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Control.Apply".applySecond (dictApplicative."Apply0" module."Prim".undefined)) f) (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Control.Apply".applySecond (dictApplicative."Apply0" module."Prim".undefined)) g) (module."Control.Applicative".pure dictApplicative module."Data.Unit".unit);
+  bifor_ = dictBifoldable: dictApplicative: t: f: g: bitraverse_ dictBifoldable dictApplicative f g t;
+  bisequence_ = dictBifoldable: dictApplicative: bitraverse_ dictBifoldable dictApplicative (module."Control.Category".identity module."Control.Category".categoryFn) (module."Control.Category".identity module."Control.Category".categoryFn);
+  bifoldl = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.bifoldl;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Bifoldable.purs at 39:3 - 39:77";
+    in
+      __pattern0 __patternFail;
+  bifoldableTuple = 
+    { bifoldMap = dictMonoid: f: g: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple"
+              then 
+                let
+                  f1 = f;
+                  g1 = g;
+                  a = v.__field0;
+                  b = v.__field1;
+                in
+                  module."Data.Semigroup".append (dictMonoid."Semigroup0" module."Prim".undefined) (f1 a) (g1 b)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Bifoldable.purs at 70:1 - 73:42";
+        in
+          __pattern0 __patternFail;
+      bifoldr = f: g: z: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple"
+              then 
+                let
+                  f1 = f;
+                  g1 = g;
+                  z1 = z;
+                  a = v.__field0;
+                  b = v.__field1;
+                in
+                  f1 a (g1 b z1)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Bifoldable.purs at 70:1 - 73:42";
+        in
+          __pattern0 __patternFail;
+      bifoldl = f: g: z: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple"
+              then 
+                let
+                  f1 = f;
+                  g1 = g;
+                  z1 = z;
+                  a = v.__field0;
+                  b = v.__field1;
+                in
+                  g1 (f1 z1 a) b
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Bifoldable.purs at 70:1 - 73:42";
+        in
+          __pattern0 __patternFail;
+    };
+  bifoldableJoker = dictFoldable: 
+    { bifoldr = v: r: u: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              r1 = r;
+              u1 = u;
+              f = v1;
+            in
+              module."LocalDependency.Data.Foldable".foldr dictFoldable r1 u1 f;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Bifoldable.purs at 47:1 - 50:40";
+        in
+          __pattern0 __patternFail;
+      bifoldl = v: r: u: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              r1 = r;
+              u1 = u;
+              f = v1;
+            in
+              module."LocalDependency.Data.Foldable".foldl dictFoldable r1 u1 f;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Bifoldable.purs at 47:1 - 50:40";
+        in
+          __pattern0 __patternFail;
+      bifoldMap = dictMonoid: v: r: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              r1 = r;
+              f = v1;
+            in
+              module."LocalDependency.Data.Foldable".foldMap dictFoldable dictMonoid r1 f;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Bifoldable.purs at 47:1 - 50:40";
+        in
+          __pattern0 __patternFail;
+    };
+  bifoldableEither = 
+    { bifoldr = v: v1: z: v2: 
+        let
+          __pattern0 = __fail: 
+            if v2.__tag == "Left"
+              then 
+                let
+                  f = v;
+                  z1 = z;
+                  a = v2.__field0;
+                in
+                  f a z1
+              else __fail;
+          __pattern1 = __fail: 
+            if v2.__tag == "Right"
+              then 
+                let
+                  g = v1;
+                  z1 = z;
+                  b = v2.__field0;
+                in
+                  g b z1
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Bifoldable.purs at 62:1 - 68:32";
+        in
+          __pattern0 (__pattern1 __patternFail);
+      bifoldl = v: v1: z: v2: 
+        let
+          __pattern0 = __fail: 
+            if v2.__tag == "Left"
+              then 
+                let
+                  f = v;
+                  z1 = z;
+                  a = v2.__field0;
+                in
+                  f z1 a
+              else __fail;
+          __pattern1 = __fail: 
+            if v2.__tag == "Right"
+              then 
+                let
+                  g = v1;
+                  z1 = z;
+                  b = v2.__field0;
+                in
+                  g z1 b
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Bifoldable.purs at 62:1 - 68:32";
+        in
+          __pattern0 (__pattern1 __patternFail);
+      bifoldMap = dictMonoid: v: v1: v2: 
+        let
+          __pattern0 = __fail: 
+            if v2.__tag == "Left"
+              then 
+                let
+                  f = v;
+                  a = v2.__field0;
+                in
+                  f a
+              else __fail;
+          __pattern1 = __fail: 
+            if v2.__tag == "Right"
+              then 
+                let
+                  g = v1;
+                  b = v2.__field0;
+                in
+                  g b
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Bifoldable.purs at 62:1 - 68:32";
+        in
+          __pattern0 (__pattern1 __patternFail);
+    };
+  bifoldableConst = 
+    { bifoldr = f: v: z: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              z1 = z;
+              a = v1;
+            in
+              f1 a z1;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Bifoldable.purs at 75:1 - 78:32";
+        in
+          __pattern0 __patternFail;
+      bifoldl = f: v: z: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              z1 = z;
+              a = v1;
+            in
+              f1 z1 a;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Bifoldable.purs at 75:1 - 78:32";
+        in
+          __pattern0 __patternFail;
+      bifoldMap = dictMonoid: f: v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              a = v1;
+            in
+              f1 a;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Bifoldable.purs at 75:1 - 78:32";
+        in
+          __pattern0 __patternFail;
+    };
+  bifoldableClown = dictFoldable: 
+    { bifoldr = l: v: u: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              l1 = l;
+              u1 = u;
+              f = v1;
+            in
+              module."LocalDependency.Data.Foldable".foldr dictFoldable l1 u1 f;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Bifoldable.purs at 42:1 - 45:40";
+        in
+          __pattern0 __patternFail;
+      bifoldl = l: v: u: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              l1 = l;
+              u1 = u;
+              f = v1;
+            in
+              module."LocalDependency.Data.Foldable".foldl dictFoldable l1 u1 f;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Bifoldable.purs at 42:1 - 45:40";
+        in
+          __pattern0 __patternFail;
+      bifoldMap = dictMonoid: l: v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              l1 = l;
+              f = v1;
+            in
+              module."LocalDependency.Data.Foldable".foldMap dictFoldable dictMonoid l1 f;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Bifoldable.purs at 42:1 - 45:40";
+        in
+          __pattern0 __patternFail;
+    };
+  bifoldMapDefaultR = dictBifoldable: dictMonoid: f: g: bifoldr dictBifoldable (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Data.Semigroup".append (dictMonoid."Semigroup0" module."Prim".undefined)) f) (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Data.Semigroup".append (dictMonoid."Semigroup0" module."Prim".undefined)) g) (module."Data.Monoid".mempty dictMonoid);
+  bifoldMapDefaultL = dictBifoldable: dictMonoid: f: g: bifoldl dictBifoldable (m: a: module."Data.Semigroup".append (dictMonoid."Semigroup0" module."Prim".undefined) m (f a)) (m: b: module."Data.Semigroup".append (dictMonoid."Semigroup0" module."Prim".undefined) m (g b)) (module."Data.Monoid".mempty dictMonoid);
+  bifoldMap = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.bifoldMap;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Bifoldable.purs at 40:3 - 40:76";
+    in
+      __pattern0 __patternFail;
+  bifoldableFlip = dictBifoldable: 
+    { bifoldr = r: l: u: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              r1 = r;
+              l1 = l;
+              u1 = u;
+              p = v;
+            in
+              bifoldr dictBifoldable l1 r1 u1 p;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Bifoldable.purs at 52:1 - 55:43";
+        in
+          __pattern0 __patternFail;
+      bifoldl = r: l: u: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              r1 = r;
+              l1 = l;
+              u1 = u;
+              p = v;
+            in
+              bifoldl dictBifoldable l1 r1 u1 p;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Bifoldable.purs at 52:1 - 55:43";
+        in
+          __pattern0 __patternFail;
+      bifoldMap = dictMonoid: r: l: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              r1 = r;
+              l1 = l;
+              p = v;
+            in
+              bifoldMap dictBifoldable dictMonoid l1 r1 p;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Bifoldable.purs at 52:1 - 55:43";
+        in
+          __pattern0 __patternFail;
+    };
+  bifoldlDefault = dictBifoldable: f: g: z: p: module."Data.Newtype".unwrap module."Prim".undefined (module."Data.Newtype".unwrap module."Prim".undefined (bifoldMap dictBifoldable (module."Data.Monoid.Dual".monoidDual (module."Data.Monoid.Endo".monoidEndo module."Control.Category".categoryFn)) (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."Data.Monoid.Dual".Dual (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."Data.Monoid.Endo".Endo (module."Data.Function".flip f))) (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."Data.Monoid.Dual".Dual (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."Data.Monoid.Endo".Endo (module."Data.Function".flip g))) p)) z;
+  bifoldrDefault = dictBifoldable: f: g: z: p: module."Data.Newtype".unwrap module."Prim".undefined (bifoldMap dictBifoldable (module."Data.Monoid.Endo".monoidEndo module."Control.Category".categoryFn) (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."Data.Monoid.Endo".Endo f) (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."Data.Monoid.Endo".Endo g) p) z;
+  bifoldableProduct2 = dictBifoldable: dictBifoldable1: 
+    { bifoldr = l: r: u: m: bifoldrDefault (bifoldableProduct2 dictBifoldable dictBifoldable1) l r u m;
+      bifoldl = l: r: u: m: bifoldlDefault (bifoldableProduct2 dictBifoldable dictBifoldable1) l r u m;
+      bifoldMap = dictMonoid: l: r: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Product2"
+              then 
+                let
+                  l1 = l;
+                  r1 = r;
+                  f = v.__field0;
+                  g = v.__field1;
+                in
+                  module."Data.Semigroup".append (dictMonoid."Semigroup0" module."Prim".undefined) (bifoldMap dictBifoldable dictMonoid l1 r1 f) (bifoldMap dictBifoldable1 dictMonoid l1 r1 g)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Bifoldable.purs at 57:1 - 60:68";
+        in
+          __pattern0 __patternFail;
+    };
+  bifold = dictBifoldable: dictMonoid: bifoldMap dictBifoldable dictMonoid (module."Control.Category".identity module."Control.Category".categoryFn) (module."Control.Category".identity module."Control.Category".categoryFn);
+  biany = dictBifoldable: dictBooleanAlgebra: p: q: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Data.Newtype".unwrap module."Prim".undefined) (bifoldMap dictBifoldable (module."Data.Monoid.Disj".monoidDisj (dictBooleanAlgebra."HeytingAlgebra0" module."Prim".undefined)) (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."Data.Monoid.Disj".Disj p) (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."Data.Monoid.Disj".Disj q));
+  biall = dictBifoldable: dictBooleanAlgebra: p: q: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Data.Newtype".unwrap module."Prim".undefined) (bifoldMap dictBifoldable (module."Data.Monoid.Conj".monoidConj (dictBooleanAlgebra."HeytingAlgebra0" module."Prim".undefined)) (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."Data.Monoid.Conj".Conj p) (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."Data.Monoid.Conj".Conj q));
+in
+  {inherit bifoldMap bifoldl bifoldr bifoldrDefault bifoldlDefault bifoldMapDefaultR bifoldMapDefaultL bifold bitraverse_ bifor_ bisequence_ biany biall bifoldableClown bifoldableJoker bifoldableFlip bifoldableProduct2 bifoldableEither bifoldableTuple bifoldableConst;}
+;
+
+LocalDependency-Data-Bifunctor-Join_default-nix = 
+let
+  module = 
+    { "Control.Applicative" = Control-Applicative_default-nix;
+      "Control.Apply" = Control-Apply_default-nix;
+      "Data.Eq" = Data-Eq_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.Newtype" = Data-Newtype_default-nix;
+      "Data.Ord" = Data-Ord_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+      "Data.Show" = Data-Show_default-nix;
+      "LocalDependency.Control.Biapplicative" = LocalDependency-Control-Biapplicative_default-nix;
+      "LocalDependency.Control.Biapply" = LocalDependency-Control-Biapply_default-nix;
+      "LocalDependency.Data.Bifunctor" = LocalDependency-Data-Bifunctor_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  Join = x: x;
+  showJoin = dictShow: 
+    { show = v: 
+        let
+          __pattern0 = __fail: 
+            let
+              x = v;
+            in
+              module."Data.Semigroup".append module."Data.Semigroup".semigroupString "(Join " (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Show".show dictShow x) ")");
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/bifunctors/Data/Bifunctor/Join.purs at 21:1 - 22:44";
+        in
+          __pattern0 __patternFail;
+    };
+  ordJoin = dictOrd: dictOrd;
+  newtypeJoin = {"Coercible0" = __unused: module."Prim".undefined;};
+  eqJoin = dictEq: dictEq;
+  bifunctorJoin = dictBifunctor: 
+    { map = f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              a = v;
+            in
+              module."LocalDependency.Data.Bifunctor".bimap dictBifunctor f1 f1 a;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/bifunctors/Data/Bifunctor/Join.purs at 24:1 - 25:38";
+        in
+          __pattern0 __patternFail;
+    };
+  biapplyJoin = dictBiapply: 
+    { apply = v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              f = v;
+              a = v1;
+            in
+              module."LocalDependency.Control.Biapply".biapply dictBiapply f a;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/bifunctors/Data/Bifunctor/Join.purs at 27:1 - 28:45";
+        in
+          __pattern0 __patternFail;
+      "Functor0" = __unused: bifunctorJoin (dictBiapply."Bifunctor0" module."Prim".undefined);
+    };
+  biapplicativeJoin = dictBiapplicative: 
+    { pure = a: module."LocalDependency.Control.Biapplicative".bipure dictBiapplicative a a;
+      "Apply0" = __unused: biapplyJoin (dictBiapplicative."Biapply0" module."Prim".undefined);
+    };
+in
+  {inherit Join newtypeJoin eqJoin ordJoin showJoin bifunctorJoin biapplyJoin biapplicativeJoin;}
+;
+
+LocalDependency-Data-Bifunctor_default-nix = 
+let
+  module = 
+    { "Control.Category" = Control-Category_default-nix;
+      "LocalDependency.Data.Const" = LocalDependency-Data-Const_default-nix;
+      "LocalDependency.Data.Either" = LocalDependency-Data-Either_default-nix;
+      "LocalDependency.Data.Tuple" = LocalDependency-Data-Tuple_default-nix;
+    };
+  Bifunctor-Dict = x: x;
+  bimap = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.bimap;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/bifunctors/Data/Bifunctor.purs at 22:3 - 22:66";
+    in
+      __pattern0 __patternFail;
+  lmap = dictBifunctor: f: bimap dictBifunctor f (module."Control.Category".identity module."Control.Category".categoryFn);
+  rmap = dictBifunctor: bimap dictBifunctor (module."Control.Category".identity module."Control.Category".categoryFn);
+  bifunctorTuple = 
+    { bimap = f: g: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple"
+              then 
+                let
+                  f1 = f;
+                  g1 = g;
+                  x = v.__field0;
+                  y = v.__field1;
+                in
+                  module."LocalDependency.Data.Tuple".Tuple (f1 x) (g1 y)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/bifunctors/Data/Bifunctor.purs at 36:1 - 37:44";
+        in
+          __pattern0 __patternFail;
+    };
+  bifunctorEither = 
+    { bimap = v: v1: v2: 
+        let
+          __pattern0 = __fail: 
+            if v2.__tag == "Left"
+              then 
+                let
+                  f = v;
+                  l = v2.__field0;
+                in
+                  module."LocalDependency.Data.Either".Left (f l)
+              else __fail;
+          __pattern1 = __fail: 
+            if v2.__tag == "Right"
+              then 
+                let
+                  g = v1;
+                  r = v2.__field0;
+                in
+                  module."LocalDependency.Data.Either".Right (g r)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/bifunctors/Data/Bifunctor.purs at 32:1 - 34:36";
+        in
+          __pattern0 (__pattern1 __patternFail);
+    };
+  bifunctorConst = 
+    { bimap = f: v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              a = v1;
+            in
+              f1 a;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/bifunctors/Data/Bifunctor.purs at 39:1 - 40:36";
+        in
+          __pattern0 __patternFail;
+    };
+in
+  {inherit bimap lmap rmap bifunctorEither bifunctorTuple bifunctorConst;}
+;
+
+LocalDependency-Data-Bitraversable_default-nix = 
+let
+  module = 
+    { "Control.Applicative" = Control-Applicative_default-nix;
+      "Control.Apply" = Control-Apply_default-nix;
+      "Control.Category" = Control-Category_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "LocalDependency.Data.Bifoldable" = LocalDependency-Data-Bifoldable_default-nix;
+      "LocalDependency.Data.Bifunctor" = LocalDependency-Data-Bifunctor_default-nix;
+      "LocalDependency.Data.Const" = LocalDependency-Data-Const_default-nix;
+      "LocalDependency.Data.Either" = LocalDependency-Data-Either_default-nix;
+      "LocalDependency.Data.Functor.Clown" = LocalDependency-Data-Functor-Clown_default-nix;
+      "LocalDependency.Data.Functor.Flip" = LocalDependency-Data-Functor-Flip_default-nix;
+      "LocalDependency.Data.Functor.Joker" = LocalDependency-Data-Functor-Joker_default-nix;
+      "LocalDependency.Data.Functor.Product2" = LocalDependency-Data-Functor-Product2_default-nix;
+      "LocalDependency.Data.Traversable" = LocalDependency-Data-Traversable_default-nix;
+      "LocalDependency.Data.Tuple" = LocalDependency-Data-Tuple_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  Bitraversable-Dict = x: x;
+  bitraverse = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.bitraverse;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Bitraversable.purs at 38:3 - 38:98";
+    in
+      __pattern0 __patternFail;
+  lfor = dictBitraversable: dictApplicative: t: f: bitraverse dictBitraversable dictApplicative f (module."Control.Applicative".pure dictApplicative) t;
+  ltraverse = dictBitraversable: dictApplicative: f: bitraverse dictBitraversable dictApplicative f (module."Control.Applicative".pure dictApplicative);
+  rfor = dictBitraversable: dictApplicative: t: f: bitraverse dictBitraversable dictApplicative (module."Control.Applicative".pure dictApplicative) f t;
+  rtraverse = dictBitraversable: dictApplicative: bitraverse dictBitraversable dictApplicative (module."Control.Applicative".pure dictApplicative);
+  bitraversableTuple = 
+    { bitraverse = dictApplicative: f: g: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple"
+              then 
+                let
+                  f1 = f;
+                  g1 = g;
+                  a = v.__field0;
+                  b = v.__field1;
+                in
+                  module."Control.Apply".apply (dictApplicative."Apply0" module."Prim".undefined) (module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."LocalDependency.Data.Tuple".Tuple (f1 a)) (g1 b)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Bitraversable.purs at 63:1 - 65:45";
+        in
+          __pattern0 __patternFail;
+      bisequence = dictApplicative: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple"
+              then 
+                let
+                  a = v.__field0;
+                  b = v.__field1;
+                in
+                  module."Control.Apply".apply (dictApplicative."Apply0" module."Prim".undefined) (module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."LocalDependency.Data.Tuple".Tuple a) b
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Bitraversable.purs at 63:1 - 65:45";
+        in
+          __pattern0 __patternFail;
+      "Bifunctor0" = __unused: module."LocalDependency.Data.Bifunctor".bifunctorTuple;
+      "Bifoldable1" = __unused: module."LocalDependency.Data.Bifoldable".bifoldableTuple;
+    };
+  bitraversableJoker = dictTraversable: 
+    { bitraverse = dictApplicative: v: r: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              r1 = r;
+              f = v1;
+            in
+              module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."LocalDependency.Data.Functor.Joker".Joker (module."LocalDependency.Data.Traversable".traverse dictTraversable dictApplicative r1 f);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Bitraversable.purs at 45:1 - 47:46";
+        in
+          __pattern0 __patternFail;
+      bisequence = dictApplicative: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f = v;
+            in
+              module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."LocalDependency.Data.Functor.Joker".Joker (module."LocalDependency.Data.Traversable".sequence dictTraversable dictApplicative f);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Bitraversable.purs at 45:1 - 47:46";
+        in
+          __pattern0 __patternFail;
+      "Bifunctor0" = __unused: module."LocalDependency.Data.Functor.Joker".bifunctorJoker (dictTraversable."Functor0" module."Prim".undefined);
+      "Bifoldable1" = __unused: module."LocalDependency.Data.Bifoldable".bifoldableJoker (dictTraversable."Foldable1" module."Prim".undefined);
+    };
+  bitraversableEither = 
+    { bitraverse = dictApplicative: v: v1: v2: 
+        let
+          __pattern0 = __fail: 
+            if v2.__tag == "Left"
+              then 
+                let
+                  f = v;
+                  a = v2.__field0;
+                in
+                  module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."LocalDependency.Data.Either".Left (f a)
+              else __fail;
+          __pattern1 = __fail: 
+            if v2.__tag == "Right"
+              then 
+                let
+                  g = v1;
+                  b = v2.__field0;
+                in
+                  module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."LocalDependency.Data.Either".Right (g b)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Bitraversable.purs at 57:1 - 61:37";
+        in
+          __pattern0 (__pattern1 __patternFail);
+      bisequence = dictApplicative: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Left"
+              then 
+                let
+                  a = v.__field0;
+                in
+                  module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."LocalDependency.Data.Either".Left a
+              else __fail;
+          __pattern1 = __fail: 
+            if v.__tag == "Right"
+              then 
+                let
+                  b = v.__field0;
+                in
+                  module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."LocalDependency.Data.Either".Right b
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Bitraversable.purs at 57:1 - 61:37";
+        in
+          __pattern0 (__pattern1 __patternFail);
+      "Bifunctor0" = __unused: module."LocalDependency.Data.Bifunctor".bifunctorEither;
+      "Bifoldable1" = __unused: module."LocalDependency.Data.Bifoldable".bifoldableEither;
+    };
+  bitraversableConst = 
+    { bitraverse = dictApplicative: f: v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              a = v1;
+            in
+              module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."LocalDependency.Data.Const".Const (f1 a);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Bitraversable.purs at 67:1 - 69:37";
+        in
+          __pattern0 __patternFail;
+      bisequence = dictApplicative: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              a = v;
+            in
+              module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."LocalDependency.Data.Const".Const a;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Bitraversable.purs at 67:1 - 69:37";
+        in
+          __pattern0 __patternFail;
+      "Bifunctor0" = __unused: module."LocalDependency.Data.Bifunctor".bifunctorConst;
+      "Bifoldable1" = __unused: module."LocalDependency.Data.Bifoldable".bifoldableConst;
+    };
+  bitraversableClown = dictTraversable: 
+    { bitraverse = dictApplicative: l: v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              l1 = l;
+              f = v1;
+            in
+              module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."LocalDependency.Data.Functor.Clown".Clown (module."LocalDependency.Data.Traversable".traverse dictTraversable dictApplicative l1 f);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Bitraversable.purs at 41:1 - 43:46";
+        in
+          __pattern0 __patternFail;
+      bisequence = dictApplicative: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f = v;
+            in
+              module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."LocalDependency.Data.Functor.Clown".Clown (module."LocalDependency.Data.Traversable".sequence dictTraversable dictApplicative f);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Bitraversable.purs at 41:1 - 43:46";
+        in
+          __pattern0 __patternFail;
+      "Bifunctor0" = __unused: module."LocalDependency.Data.Functor.Clown".bifunctorClown (dictTraversable."Functor0" module."Prim".undefined);
+      "Bifoldable1" = __unused: module."LocalDependency.Data.Bifoldable".bifoldableClown (dictTraversable."Foldable1" module."Prim".undefined);
+    };
+  bisequenceDefault = dictBitraversable: dictApplicative: bitraverse dictBitraversable dictApplicative (module."Control.Category".identity module."Control.Category".categoryFn) (module."Control.Category".identity module."Control.Category".categoryFn);
+  bisequence = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.bisequence;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Bitraversable.purs at 39:3 - 39:74";
+    in
+      __pattern0 __patternFail;
+  bitraversableFlip = dictBitraversable: 
+    { bitraverse = dictApplicative: r: l: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              r1 = r;
+              l1 = l;
+              p = v;
+            in
+              module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."LocalDependency.Data.Functor.Flip".Flip (bitraverse dictBitraversable dictApplicative l1 r1 p);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Bitraversable.purs at 49:1 - 51:46";
+        in
+          __pattern0 __patternFail;
+      bisequence = dictApplicative: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              p = v;
+            in
+              module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."LocalDependency.Data.Functor.Flip".Flip (bisequence dictBitraversable dictApplicative p);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Bitraversable.purs at 49:1 - 51:46";
+        in
+          __pattern0 __patternFail;
+      "Bifunctor0" = __unused: module."LocalDependency.Data.Functor.Flip".bifunctorFlip (dictBitraversable."Bifunctor0" module."Prim".undefined);
+      "Bifoldable1" = __unused: module."LocalDependency.Data.Bifoldable".bifoldableFlip (dictBitraversable."Bifoldable1" module."Prim".undefined);
+    };
+  bitraversableProduct2 = dictBitraversable: dictBitraversable1: 
+    { bitraverse = dictApplicative: l: r: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Product2"
+              then 
+                let
+                  l1 = l;
+                  r1 = r;
+                  f = v.__field0;
+                  g = v.__field1;
+                in
+                  module."Control.Apply".apply (dictApplicative."Apply0" module."Prim".undefined) (module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."LocalDependency.Data.Functor.Product2".Product2 (bitraverse dictBitraversable dictApplicative l1 r1 f)) (bitraverse dictBitraversable1 dictApplicative l1 r1 g)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Bitraversable.purs at 53:1 - 55:73";
+        in
+          __pattern0 __patternFail;
+      bisequence = dictApplicative: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Product2"
+              then 
+                let
+                  f = v.__field0;
+                  g = v.__field1;
+                in
+                  module."Control.Apply".apply (dictApplicative."Apply0" module."Prim".undefined) (module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."LocalDependency.Data.Functor.Product2".Product2 (bisequence dictBitraversable dictApplicative f)) (bisequence dictBitraversable1 dictApplicative g)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Bitraversable.purs at 53:1 - 55:73";
+        in
+          __pattern0 __patternFail;
+      "Bifunctor0" = __unused: module."LocalDependency.Data.Functor.Product2".bifunctorProduct2 (dictBitraversable."Bifunctor0" module."Prim".undefined) (dictBitraversable1."Bifunctor0" module."Prim".undefined);
+      "Bifoldable1" = __unused: module."LocalDependency.Data.Bifoldable".bifoldableProduct2 (dictBitraversable."Bifoldable1" module."Prim".undefined) (dictBitraversable1."Bifoldable1" module."Prim".undefined);
+    };
+  bitraverseDefault = dictBitraversable: dictApplicative: f: g: t: bisequence dictBitraversable dictApplicative (module."LocalDependency.Data.Bifunctor".bimap (dictBitraversable."Bifunctor0" module."Prim".undefined) f g t);
+  bifor = dictBitraversable: dictApplicative: t: f: g: bitraverse dictBitraversable dictApplicative f g t;
+in
+  
+  { inherit bitraverse bisequence bitraverseDefault bisequenceDefault ltraverse rtraverse bifor lfor rfor bitraversableClown bitraversableJoker bitraversableFlip bitraversableProduct2 bitraversableEither bitraversableTuple bitraversableConst;
+    inherit (module."LocalDependency.Data.Bifoldable") biall biany bifold bifoldMap bifoldMapDefaultL bifoldMapDefaultR bifoldl bifoldlDefault bifoldr bifoldrDefault bifor_ bisequence_ bitraverse_;
+  }
+;
+
+LocalDependency-Data-Comparison_default-nix = 
+let
+  module = 
+    { "Data.Function" = Data-Function_default-nix;
+      "Data.Monoid" = Data-Monoid_default-nix;
+      "Data.Newtype" = Data-Newtype_default-nix;
+      "Data.Ord" = Data-Ord_default-nix;
+      "Data.Ordering" = Data-Ordering_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+      "LocalDependency.Data.Functor.Contravariant" = LocalDependency-Data-Functor-Contravariant_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  Comparison = x: x;
+  semigroupComparison = 
+    { append = v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              p = v;
+              q = v1;
+            in
+              module."Data.Semigroup".append (module."Data.Semigroup".semigroupFn (module."Data.Semigroup".semigroupFn module."Data.Ordering".semigroupOrdering)) p q;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/contravariant/Data/Comparison.purs at 17:1 - 18:61";
+        in
+          __pattern0 __patternFail;
+    };
+  newtypeComparison = {"Coercible0" = __unused: module."Prim".undefined;};
+  monoidComparison = 
+    { mempty = v: v1: module."Data.Ordering".EQ;
+      "Semigroup0" = __unused: semigroupComparison;
+    };
+  defaultComparison = dictOrd: module."Data.Ord".compare dictOrd;
+  contravariantComparison = 
+    { cmap = f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              g = v;
+            in
+              module."Data.Function".on g f1;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/contravariant/Data/Comparison.purs at 14:1 - 15:48";
+        in
+          __pattern0 __patternFail;
+    };
+in
+  {inherit Comparison defaultComparison newtypeComparison contravariantComparison semigroupComparison monoidComparison;}
+;
+
+LocalDependency-Data-Const_default-nix = 
+let
+  module = 
+    { "Control.Applicative" = Control-Applicative_default-nix;
+      "Control.Apply" = Control-Apply_default-nix;
+      "Control.Semigroupoid" = Control-Semigroupoid_default-nix;
+      "Data.BooleanAlgebra" = Data-BooleanAlgebra_default-nix;
+      "Data.Bounded" = Data-Bounded_default-nix;
+      "Data.CommutativeRing" = Data-CommutativeRing_default-nix;
+      "Data.Eq" = Data-Eq_default-nix;
+      "Data.EuclideanRing" = Data-EuclideanRing_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.HeytingAlgebra" = Data-HeytingAlgebra_default-nix;
+      "Data.Monoid" = Data-Monoid_default-nix;
+      "Data.Newtype" = Data-Newtype_default-nix;
+      "Data.Ord" = Data-Ord_default-nix;
+      "Data.Ring" = Data-Ring_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+      "Data.Semiring" = Data-Semiring_default-nix;
+      "Data.Show" = Data-Show_default-nix;
+      "LocalDependency.Data.Functor.Invariant" = LocalDependency-Data-Functor-Invariant_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  Const = x: x;
+  showConst = dictShow: 
+    { show = v: 
+        let
+          __pattern0 = __fail: 
+            let
+              x = v;
+            in
+              module."Data.Semigroup".append module."Data.Semigroup".semigroupString "(Const " (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Show".show dictShow x) ")");
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/const/Data/Const.purs at 32:1 - 33:46";
+        in
+          __pattern0 __patternFail;
+    };
+  semiringConst = dictSemiring: dictSemiring;
+  semigroupoidConst = 
+    { compose = v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              x = v1;
+            in
+              x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/const/Data/Const.purs at 35:1 - 36:32";
+        in
+          __pattern0 __patternFail;
+    };
+  semigroupConst = dictSemigroup: dictSemigroup;
+  ringConst = dictRing: dictRing;
+  ordConst = dictOrd: dictOrd;
+  newtypeConst = {"Coercible0" = __unused: module."Prim".undefined;};
+  monoidConst = dictMonoid: dictMonoid;
+  heytingAlgebraConst = dictHeytingAlgebra: dictHeytingAlgebra;
+  functorConst = 
+    { map = f: m: 
+        let
+          __pattern0 = __fail: 
+            let
+              v = m;
+            in
+              v;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/const/Data/Const.purs at 54:1 - 54:50";
+        in
+          __pattern0 __patternFail;
+    };
+  invariantConst = {imap = module."LocalDependency.Data.Functor.Invariant".imapF functorConst;};
+  euclideanRingConst = dictEuclideanRing: dictEuclideanRing;
+  eqConst = dictEq: dictEq;
+  eq1Const = dictEq: {eq1 = dictEq1: module."Data.Eq".eq (eqConst dictEq);};
+  ord1Const = dictOrd: 
+    { compare1 = dictOrd1: module."Data.Ord".compare (ordConst dictOrd);
+      "Eq10" = __unused: eq1Const (dictOrd."Eq0" module."Prim".undefined);
+    };
+  commutativeRingConst = dictCommutativeRing: dictCommutativeRing;
+  boundedConst = dictBounded: dictBounded;
+  booleanAlgebraConst = dictBooleanAlgebra: dictBooleanAlgebra;
+  applyConst = dictSemigroup: 
+    { apply = v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              x = v;
+              y = v1;
+            in
+              module."Data.Semigroup".append dictSemigroup x y;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/const/Data/Const.purs at 59:1 - 60:45";
+        in
+          __pattern0 __patternFail;
+      "Functor0" = __unused: functorConst;
+    };
+  applicativeConst = dictMonoid: 
+    { pure = v: module."Data.Monoid".mempty dictMonoid;
+      "Apply0" = __unused: applyConst (dictMonoid."Semigroup0" module."Prim".undefined);
+    };
+in
+  {inherit Const newtypeConst eqConst eq1Const ordConst ord1Const boundedConst showConst semigroupoidConst semigroupConst monoidConst semiringConst ringConst euclideanRingConst commutativeRingConst heytingAlgebraConst booleanAlgebraConst functorConst invariantConst applyConst applicativeConst;}
+;
+
+LocalDependency-Data-Decidable_default-nix = 
+let
+  module = 
+    { "Control.Category" = Control-Category_default-nix;
+      "Data.Void" = Data-Void_default-nix;
+      "LocalDependency.Data.Comparison" = LocalDependency-Data-Comparison_default-nix;
+      "LocalDependency.Data.Decide" = LocalDependency-Data-Decide_default-nix;
+      "LocalDependency.Data.Divisible" = LocalDependency-Data-Divisible_default-nix;
+      "LocalDependency.Data.Equivalence" = LocalDependency-Data-Equivalence_default-nix;
+      "LocalDependency.Data.Op" = LocalDependency-Data-Op_default-nix;
+      "LocalDependency.Data.Predicate" = LocalDependency-Data-Predicate_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  Decidable-Dict = x: x;
+  lose = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.lose;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/contravariant/Data/Decidable.purs at 14:3 - 14:39";
+    in
+      __pattern0 __patternFail;
+  lost = dictDecidable: lose dictDecidable (module."Control.Category".identity module."Control.Category".categoryFn);
+  decidablePredicate = 
+    { lose = f: a: module."Data.Void".absurd (f a);
+      "Decide0" = __unused: module."LocalDependency.Data.Decide".choosePredicate;
+      "Divisible1" = __unused: module."LocalDependency.Data.Divisible".divisiblePredicate;
+    };
+  decidableOp = dictMonoid: 
+    { lose = f: a: module."Data.Void".absurd (f a);
+      "Decide0" = __unused: module."LocalDependency.Data.Decide".chooseOp (dictMonoid."Semigroup0" module."Prim".undefined);
+      "Divisible1" = __unused: module."LocalDependency.Data.Divisible".divisibleOp dictMonoid;
+    };
+  decidableEquivalence = 
+    { lose = f: a: module."Data.Void".absurd (f a);
+      "Decide0" = __unused: module."LocalDependency.Data.Decide".chooseEquivalence;
+      "Divisible1" = __unused: module."LocalDependency.Data.Divisible".divisibleEquivalence;
+    };
+  decidableComparison = 
+    { lose = f: a: v: module."Data.Void".absurd (f a);
+      "Decide0" = __unused: module."LocalDependency.Data.Decide".chooseComparison;
+      "Divisible1" = __unused: module."LocalDependency.Data.Divisible".divisibleComparison;
+    };
+in
+  {inherit lose lost decidableComparison decidableEquivalence decidablePredicate decidableOp;}
+;
+
+LocalDependency-Data-Decide_default-nix = 
+let
+  module = 
+    { "Control.Category" = Control-Category_default-nix;
+      "Control.Semigroupoid" = Control-Semigroupoid_default-nix;
+      "Data.Ordering" = Data-Ordering_default-nix;
+      "LocalDependency.Data.Comparison" = LocalDependency-Data-Comparison_default-nix;
+      "LocalDependency.Data.Divide" = LocalDependency-Data-Divide_default-nix;
+      "LocalDependency.Data.Either" = LocalDependency-Data-Either_default-nix;
+      "LocalDependency.Data.Equivalence" = LocalDependency-Data-Equivalence_default-nix;
+      "LocalDependency.Data.Op" = LocalDependency-Data-Op_default-nix;
+      "LocalDependency.Data.Predicate" = LocalDependency-Data-Predicate_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  Decide-Dict = x: x;
+  choosePredicate = 
+    { choose = f: v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              g = v;
+              h = v1;
+            in
+              module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."LocalDependency.Data.Either".either g h) f1;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/contravariant/Data/Decide.purs at 34:1 - 35:70";
+        in
+          __pattern0 __patternFail;
+      "Divide0" = __unused: module."LocalDependency.Data.Divide".dividePredicate;
+    };
+  chooseOp = dictSemigroup: 
+    { choose = f: v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              g = v;
+              h = v1;
+            in
+              module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."LocalDependency.Data.Either".either g h) f1;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/contravariant/Data/Decide.purs at 37:1 - 38:49";
+        in
+          __pattern0 __patternFail;
+      "Divide0" = __unused: module."LocalDependency.Data.Divide".divideOp dictSemigroup;
+    };
+  chooseEquivalence = 
+    { choose = f: v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              g = v;
+              h = v1;
+            in
+              a: b: 
+              let
+                v2 = f1 a;
+              in
+                
+                let
+                  __pattern0 = __fail: 
+                    if v2.__tag == "Left"
+                      then 
+                        let
+                          c = v2.__field0;
+                        in
+                          
+                          let
+                            v3 = f1 b;
+                          in
+                            
+                            let
+                              __pattern0 = __fail: 
+                                if v3.__tag == "Left"
+                                  then 
+                                    let
+                                      d = v3.__field0;
+                                    in
+                                      g c d
+                                  else __fail;
+                              __pattern1 = __fail: if v3.__tag == "Right" then false else __fail;
+                              __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/contravariant/Data/Decide.purs at 27:15 - 29:23";
+                            in
+                              __pattern0 (__pattern1 __patternFail)
+                      else __fail;
+                  __pattern1 = __fail: 
+                    if v2.__tag == "Right"
+                      then 
+                        let
+                          c = v2.__field0;
+                        in
+                          
+                          let
+                            v3 = f1 b;
+                          in
+                            
+                            let
+                              __pattern0 = __fail: if v3.__tag == "Left" then false else __fail;
+                              __pattern1 = __fail: 
+                                if v3.__tag == "Right"
+                                  then 
+                                    let
+                                      d = v3.__field0;
+                                    in
+                                      h c d
+                                  else __fail;
+                              __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/contravariant/Data/Decide.purs at 30:16 - 32:23";
+                            in
+                              __pattern0 (__pattern1 __patternFail)
+                      else __fail;
+                  __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/contravariant/Data/Decide.purs at 26:66 - 32:23";
+                in
+                  __pattern0 (__pattern1 __patternFail);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/contravariant/Data/Decide.purs at 25:1 - 32:23";
+        in
+          __pattern0 __patternFail;
+      "Divide0" = __unused: module."LocalDependency.Data.Divide".divideEquivalence;
+    };
+  chooseComparison = 
+    { choose = f: v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              g = v;
+              h = v1;
+            in
+              a: b: 
+              let
+                v2 = f1 a;
+              in
+                
+                let
+                  __pattern0 = __fail: 
+                    if v2.__tag == "Left"
+                      then 
+                        let
+                          c = v2.__field0;
+                        in
+                          
+                          let
+                            v3 = f1 b;
+                          in
+                            
+                            let
+                              __pattern0 = __fail: 
+                                if v3.__tag == "Left"
+                                  then 
+                                    let
+                                      d = v3.__field0;
+                                    in
+                                      g c d
+                                  else __fail;
+                              __pattern1 = __fail: if v3.__tag == "Right" then module."Data.Ordering".LT else __fail;
+                              __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/contravariant/Data/Decide.purs at 18:15 - 20:20";
+                            in
+                              __pattern0 (__pattern1 __patternFail)
+                      else __fail;
+                  __pattern1 = __fail: 
+                    if v2.__tag == "Right"
+                      then 
+                        let
+                          c = v2.__field0;
+                        in
+                          
+                          let
+                            v3 = f1 b;
+                          in
+                            
+                            let
+                              __pattern0 = __fail: if v3.__tag == "Left" then module."Data.Ordering".GT else __fail;
+                              __pattern1 = __fail: 
+                                if v3.__tag == "Right"
+                                  then 
+                                    let
+                                      d = v3.__field0;
+                                    in
+                                      h c d
+                                  else __fail;
+                              __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/contravariant/Data/Decide.purs at 21:16 - 23:23";
+                            in
+                              __pattern0 (__pattern1 __patternFail)
+                      else __fail;
+                  __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/contravariant/Data/Decide.purs at 17:63 - 23:23";
+                in
+                  __pattern0 (__pattern1 __patternFail);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/contravariant/Data/Decide.purs at 16:1 - 23:23";
+        in
+          __pattern0 __patternFail;
+      "Divide0" = __unused: module."LocalDependency.Data.Divide".divideComparison;
+    };
+  choose = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.choose;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/contravariant/Data/Decide.purs at 14:3 - 14:65";
+    in
+      __pattern0 __patternFail;
+  chosen = dictDecide: choose dictDecide (module."Control.Category".identity module."Control.Category".categoryFn);
+in
+  {inherit choose chosen chooseComparison chooseEquivalence choosePredicate chooseOp;}
+;
+
+LocalDependency-Data-Distributive_default-nix = 
+let
+  module = 
+    { "Control.Category" = Control-Category_default-nix;
+      "Control.Semigroupoid" = Control-Semigroupoid_default-nix;
+      "Data.Function" = Data-Function_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.Newtype" = Data-Newtype_default-nix;
+      "Data.Unit" = Data-Unit_default-nix;
+      "LocalDependency.Data.Identity" = LocalDependency-Data-Identity_default-nix;
+      "LocalDependency.Data.Tuple" = LocalDependency-Data-Tuple_default-nix;
+      "LocalDependency.Type.Equality" = LocalDependency-Type-Equality_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  Distributive-Dict = x: x;
+  distributiveIdentity = 
+    { distribute = dictFunctor: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."LocalDependency.Data.Identity".Identity (module."Data.Functor".map dictFunctor (module."Data.Newtype".unwrap module."Prim".undefined));
+      collect = dictFunctor: f: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."LocalDependency.Data.Identity".Identity (module."Data.Functor".map dictFunctor (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Data.Newtype".unwrap module."Prim".undefined) f));
+      "Functor0" = __unused: module."LocalDependency.Data.Identity".functorIdentity;
+    };
+  distribute = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.distribute;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/distributive/Data/Distributive.purs at 25:3 - 25:60";
+    in
+      __pattern0 __patternFail;
+  distributiveFunction = 
+    { distribute = dictFunctor: a: e: module."Data.Functor".map dictFunctor (v: module."Data.Function".apply v e) a;
+      collect = dictFunctor: f: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (distribute distributiveFunction dictFunctor) (module."Data.Functor".map dictFunctor f);
+      "Functor0" = __unused: module."Data.Functor".functorFn;
+    };
+  cotraverse = dictDistributive: dictFunctor: f: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Data.Functor".map (dictDistributive."Functor0" module."Prim".undefined) f) (distribute dictDistributive dictFunctor);
+  collectDefault = dictDistributive: dictFunctor: f: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (distribute dictDistributive dictFunctor) (module."Data.Functor".map dictFunctor f);
+  distributiveTuple = dictTypeEquals: 
+    { collect = dictFunctor: collectDefault (distributiveTuple dictTypeEquals) dictFunctor;
+      distribute = dictFunctor: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."LocalDependency.Data.Tuple".Tuple (module."LocalDependency.Type.Equality".from dictTypeEquals module."Data.Unit".unit)) (module."Data.Functor".map dictFunctor module."LocalDependency.Data.Tuple".snd);
+      "Functor0" = __unused: module."LocalDependency.Data.Tuple".functorTuple;
+    };
+  collect = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.collect;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/distributive/Data/Distributive.purs at 26:3 - 26:69";
+    in
+      __pattern0 __patternFail;
+  distributeDefault = dictDistributive: dictFunctor: collect dictDistributive dictFunctor (module."Control.Category".identity module."Control.Category".categoryFn);
+in
+  {inherit collect distribute distributeDefault collectDefault cotraverse distributiveIdentity distributiveFunction distributiveTuple;}
+;
+
+LocalDependency-Data-Divide_default-nix = 
+let
+  module = 
+    { "Control.Category" = Control-Category_default-nix;
+      "Data.HeytingAlgebra" = Data-HeytingAlgebra_default-nix;
+      "Data.Ordering" = Data-Ordering_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+      "LocalDependency.Data.Comparison" = LocalDependency-Data-Comparison_default-nix;
+      "LocalDependency.Data.Equivalence" = LocalDependency-Data-Equivalence_default-nix;
+      "LocalDependency.Data.Functor.Contravariant" = LocalDependency-Data-Functor-Contravariant_default-nix;
+      "LocalDependency.Data.Op" = LocalDependency-Data-Op_default-nix;
+      "LocalDependency.Data.Predicate" = LocalDependency-Data-Predicate_default-nix;
+      "LocalDependency.Data.Tuple" = LocalDependency-Data-Tuple_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  Divide-Dict = x: x;
+  dividePredicate = 
+    { divide = f: v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              g = v;
+              h = v1;
+            in
+              a: 
+              let
+                v2 = f1 a;
+              in
+                
+                let
+                  __pattern0 = __fail: 
+                    if v2.__tag == "Tuple"
+                      then 
+                        let
+                          b = v2.__field0;
+                          c = v2.__field1;
+                        in
+                          module."Data.HeytingAlgebra".conj module."Data.HeytingAlgebra".heytingAlgebraBoolean (g b) (h c)
+                      else __fail;
+                  __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/contravariant/Data/Divide.purs at 37:58 - 38:28";
+                in
+                  __pattern0 __patternFail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/contravariant/Data/Divide.purs at 36:1 - 38:28";
+        in
+          __pattern0 __patternFail;
+      "Contravariant0" = __unused: module."LocalDependency.Data.Predicate".contravariantPredicate;
+    };
+  divideOp = dictSemigroup: 
+    { divide = f: v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              g = v;
+              h = v1;
+            in
+              a: 
+              let
+                v2 = f1 a;
+              in
+                
+                let
+                  __pattern0 = __fail: 
+                    if v2.__tag == "Tuple"
+                      then 
+                        let
+                          b = v2.__field0;
+                          c = v2.__field1;
+                        in
+                          module."Data.Semigroup".append dictSemigroup (g b) (h c)
+                      else __fail;
+                  __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/contravariant/Data/Divide.purs at 41:37 - 42:28";
+                in
+                  __pattern0 __patternFail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/contravariant/Data/Divide.purs at 40:1 - 42:28";
+        in
+          __pattern0 __patternFail;
+      "Contravariant0" = __unused: module."LocalDependency.Data.Op".contravariantOp;
+    };
+  divideEquivalence = 
+    { divide = f: v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              g = v;
+              h = v1;
+            in
+              a: b: 
+              let
+                v2 = f1 a;
+              in
+                
+                let
+                  __pattern0 = __fail: 
+                    if v2.__tag == "Tuple"
+                      then 
+                        let
+                          a' = v2.__field0;
+                          a'' = v2.__field1;
+                        in
+                          
+                          let
+                            v3 = f1 b;
+                          in
+                            
+                            let
+                              __pattern0 = __fail: 
+                                if v3.__tag == "Tuple"
+                                  then 
+                                    let
+                                      b' = v3.__field0;
+                                      b'' = v3.__field1;
+                                    in
+                                      module."Data.HeytingAlgebra".conj module."Data.HeytingAlgebra".heytingAlgebraBoolean (g a' b') (h a'' b'')
+                                  else __fail;
+                              __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/contravariant/Data/Divide.purs at 33:21 - 34:43";
+                            in
+                              __pattern0 __patternFail
+                      else __fail;
+                  __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/contravariant/Data/Divide.purs at 32:66 - 34:43";
+                in
+                  __pattern0 __patternFail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/contravariant/Data/Divide.purs at 31:1 - 34:43";
+        in
+          __pattern0 __patternFail;
+      "Contravariant0" = __unused: module."LocalDependency.Data.Equivalence".contravariantEquivalence;
+    };
+  divideComparison = 
+    { divide = f: v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              g = v;
+              h = v1;
+            in
+              a: b: 
+              let
+                v2 = f1 a;
+              in
+                
+                let
+                  __pattern0 = __fail: 
+                    if v2.__tag == "Tuple"
+                      then 
+                        let
+                          a' = v2.__field0;
+                          a'' = v2.__field1;
+                        in
+                          
+                          let
+                            v3 = f1 b;
+                          in
+                            
+                            let
+                              __pattern0 = __fail: 
+                                if v3.__tag == "Tuple"
+                                  then 
+                                    let
+                                      b' = v3.__field0;
+                                      b'' = v3.__field1;
+                                    in
+                                      module."Data.Semigroup".append module."Data.Ordering".semigroupOrdering (g a' b') (h a'' b'')
+                                  else __fail;
+                              __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/contravariant/Data/Divide.purs at 28:21 - 29:43";
+                            in
+                              __pattern0 __patternFail
+                      else __fail;
+                  __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/contravariant/Data/Divide.purs at 27:63 - 29:43";
+                in
+                  __pattern0 __patternFail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/contravariant/Data/Divide.purs at 26:1 - 29:43";
+        in
+          __pattern0 __patternFail;
+      "Contravariant0" = __unused: module."LocalDependency.Data.Comparison".contravariantComparison;
+    };
+  divide = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.divide;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/contravariant/Data/Divide.purs at 24:3 - 24:64";
+    in
+      __pattern0 __patternFail;
+  divided = dictDivide: divide dictDivide (module."Control.Category".identity module."Control.Category".categoryFn);
+in
+  {inherit divide divided divideComparison divideEquivalence dividePredicate divideOp;}
+;
+
+LocalDependency-Data-Divisible_default-nix = 
+let
+  module = 
+    { "Data.Function" = Data-Function_default-nix;
+      "Data.Monoid" = Data-Monoid_default-nix;
+      "Data.Ordering" = Data-Ordering_default-nix;
+      "LocalDependency.Data.Comparison" = LocalDependency-Data-Comparison_default-nix;
+      "LocalDependency.Data.Divide" = LocalDependency-Data-Divide_default-nix;
+      "LocalDependency.Data.Equivalence" = LocalDependency-Data-Equivalence_default-nix;
+      "LocalDependency.Data.Op" = LocalDependency-Data-Op_default-nix;
+      "LocalDependency.Data.Predicate" = LocalDependency-Data-Predicate_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  Divisible-Dict = x: x;
+  divisiblePredicate = 
+    { conquer = module."Data.Function".const true;
+      "Divide0" = __unused: module."LocalDependency.Data.Divide".dividePredicate;
+    };
+  divisibleOp = dictMonoid: 
+    { conquer = module."Data.Function".apply module."LocalDependency.Data.Op".Op (module."Data.Function".const (module."Data.Monoid".mempty dictMonoid));
+      "Divide0" = __unused: module."LocalDependency.Data.Divide".divideOp (dictMonoid."Semigroup0" module."Prim".undefined);
+    };
+  divisibleEquivalence = 
+    { conquer = module."Data.Function".apply module."LocalDependency.Data.Equivalence".Equivalence (v: v1: true);
+      "Divide0" = __unused: module."LocalDependency.Data.Divide".divideEquivalence;
+    };
+  divisibleComparison = 
+    { conquer = module."Data.Function".apply module."LocalDependency.Data.Comparison".Comparison (v: v1: module."Data.Ordering".EQ);
+      "Divide0" = __unused: module."LocalDependency.Data.Divide".divideComparison;
+    };
+  conquer = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.conquer;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/contravariant/Data/Divisible.purs at 13:3 - 13:27";
+    in
+      __pattern0 __patternFail;
+in
+  {inherit conquer divisibleComparison divisibleEquivalence divisiblePredicate divisibleOp;}
+;
+
+LocalDependency-Data-Either-Inject_default-nix = 
+let
+  module = 
+    { "Control.Category" = Control-Category_default-nix;
+      "Control.Semigroupoid" = Control-Semigroupoid_default-nix;
+      "Data.Function" = Data-Function_default-nix;
+      "LocalDependency.Data.Either" = LocalDependency-Data-Either_default-nix;
+      "LocalDependency.Data.Maybe" = LocalDependency-Data-Maybe_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  Inject-Dict = x: x;
+  prj = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.prj;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Inject.purs at 10:3 - 10:22";
+    in
+      __pattern0 __patternFail;
+  injectReflexive = 
+    { inj = module."Control.Category".identity module."Control.Category".categoryFn;
+      prj = module."LocalDependency.Data.Maybe".Just;
+    };
+  injectLeft = 
+    { inj = module."LocalDependency.Data.Either".Left;
+      prj = module."LocalDependency.Data.Either".either module."LocalDependency.Data.Maybe".Just (module."Data.Function".const module."LocalDependency.Data.Maybe".Nothing);
+    };
+  inj = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.inj;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Inject.purs at 9:3 - 9:16";
+    in
+      __pattern0 __patternFail;
+  injectRight = dictInject: 
+    { inj = module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."LocalDependency.Data.Either".Right (inj dictInject);
+      prj = module."LocalDependency.Data.Either".either (module."Data.Function".const module."LocalDependency.Data.Maybe".Nothing) (prj dictInject);
+    };
+in
+  {inherit inj prj injectReflexive injectLeft injectRight;}
+;
+
+LocalDependency-Data-Either-Nested_default-nix = 
+let
+  module = 
+    { "Data.Void" = Data-Void_default-nix;
+      "LocalDependency.Data.Either" = LocalDependency-Data-Either_default-nix;
+    };
+  in9 = v: module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Left v))))))));
+  in8 = v: module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Left v)))))));
+  in7 = v: module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Left v))))));
+  in6 = v: module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Left v)))));
+  in5 = v: module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Left v))));
+  in4 = v: module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Left v)));
+  in3 = v: module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Left v));
+  in2 = v: module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Left v);
+  in10 = v: module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Right (module."LocalDependency.Data.Either".Left v)))))))));
+  in1 = module."LocalDependency.Data.Either".Left;
+  either9 = a: b: c: d: e: f: g: h: i: y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Left"
+          then 
+            let
+              r = y.__field0;
+            in
+              a r
+          else __fail;
+      __pattern1 = __fail: 
+        if y.__tag == "Right"
+          then 
+            let
+              _1 = y.__field0;
+            in
+              
+              let
+                __pattern0 = __fail: 
+                  if _1.__tag == "Left"
+                    then 
+                      let
+                        r = _1.__field0;
+                      in
+                        b r
+                    else __fail;
+                __pattern1 = __fail: 
+                  if _1.__tag == "Right"
+                    then 
+                      let
+                        _2 = _1.__field0;
+                      in
+                        
+                        let
+                          __pattern0 = __fail: 
+                            if _2.__tag == "Left"
+                              then 
+                                let
+                                  r = _2.__field0;
+                                in
+                                  c r
+                              else __fail;
+                          __pattern1 = __fail: 
+                            if _2.__tag == "Right"
+                              then 
+                                let
+                                  _3 = _2.__field0;
+                                in
+                                  
+                                  let
+                                    __pattern0 = __fail: 
+                                      if _3.__tag == "Left"
+                                        then 
+                                          let
+                                            r = _3.__field0;
+                                          in
+                                            d r
+                                        else __fail;
+                                    __pattern1 = __fail: 
+                                      if _3.__tag == "Right"
+                                        then 
+                                          let
+                                            _4 = _3.__field0;
+                                          in
+                                            
+                                            let
+                                              __pattern0 = __fail: 
+                                                if _4.__tag == "Left"
+                                                  then 
+                                                    let
+                                                      r = _4.__field0;
+                                                    in
+                                                      e r
+                                                  else __fail;
+                                              __pattern1 = __fail: 
+                                                if _4.__tag == "Right"
+                                                  then 
+                                                    let
+                                                      _5 = _4.__field0;
+                                                    in
+                                                      
+                                                      let
+                                                        __pattern0 = __fail: 
+                                                          if _5.__tag == "Left"
+                                                            then 
+                                                              let
+                                                                r = _5.__field0;
+                                                              in
+                                                                f r
+                                                            else __fail;
+                                                        __pattern1 = __fail: 
+                                                          if _5.__tag == "Right"
+                                                            then 
+                                                              let
+                                                                _6 = _5.__field0;
+                                                              in
+                                                                
+                                                                let
+                                                                  __pattern0 = __fail: 
+                                                                    if _6.__tag == "Left"
+                                                                      then 
+                                                                        let
+                                                                          r = _6.__field0;
+                                                                        in
+                                                                          g r
+                                                                      else __fail;
+                                                                  __pattern1 = __fail: 
+                                                                    if _6.__tag == "Right"
+                                                                      then 
+                                                                        let
+                                                                          _7 = _6.__field0;
+                                                                        in
+                                                                          
+                                                                          let
+                                                                            __pattern0 = __fail: 
+                                                                              if _7.__tag == "Left"
+                                                                                then 
+                                                                                  let
+                                                                                    r = _7.__field0;
+                                                                                  in
+                                                                                    h r
+                                                                                else __fail;
+                                                                            __pattern1 = __fail: 
+                                                                              if _7.__tag == "Right"
+                                                                                then 
+                                                                                  let
+                                                                                    _8 = _7.__field0;
+                                                                                  in
+                                                                                    
+                                                                                    let
+                                                                                      __pattern0 = __fail: 
+                                                                                        if _8.__tag == "Left"
+                                                                                          then 
+                                                                                            let
+                                                                                              r = _8.__field0;
+                                                                                            in
+                                                                                              i r
+                                                                                          else __fail;
+                                                                                      __pattern1 = __fail: 
+                                                                                        if _8.__tag == "Right"
+                                                                                          then 
+                                                                                            let
+                                                                                              _9 = _8.__field0;
+                                                                                            in
+                                                                                              module."Data.Void".absurd _9
+                                                                                          else __fail;
+                                                                                      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 253:29 - 255:40";
+                                                                                    in
+                                                                                      __pattern0 (__pattern1 __patternFail)
+                                                                                else __fail;
+                                                                            __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 251:27 - 255:40";
+                                                                          in
+                                                                            __pattern0 (__pattern1 __patternFail)
+                                                                      else __fail;
+                                                                  __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 249:25 - 255:40";
+                                                                in
+                                                                  __pattern0 (__pattern1 __patternFail)
+                                                            else __fail;
+                                                        __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 247:23 - 255:40";
+                                                      in
+                                                        __pattern0 (__pattern1 __patternFail)
+                                                  else __fail;
+                                              __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 245:21 - 255:40";
+                                            in
+                                              __pattern0 (__pattern1 __patternFail)
+                                        else __fail;
+                                    __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 243:19 - 255:40";
+                                  in
+                                    __pattern0 (__pattern1 __patternFail)
+                              else __fail;
+                          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 241:17 - 255:40";
+                        in
+                          __pattern0 (__pattern1 __patternFail)
+                    else __fail;
+                __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 239:15 - 255:40";
+              in
+                __pattern0 (__pattern1 __patternFail)
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 237:31 - 255:40";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  either8 = a: b: c: d: e: f: g: h: y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Left"
+          then 
+            let
+              r = y.__field0;
+            in
+              a r
+          else __fail;
+      __pattern1 = __fail: 
+        if y.__tag == "Right"
+          then 
+            let
+              _1 = y.__field0;
+            in
+              
+              let
+                __pattern0 = __fail: 
+                  if _1.__tag == "Left"
+                    then 
+                      let
+                        r = _1.__field0;
+                      in
+                        b r
+                    else __fail;
+                __pattern1 = __fail: 
+                  if _1.__tag == "Right"
+                    then 
+                      let
+                        _2 = _1.__field0;
+                      in
+                        
+                        let
+                          __pattern0 = __fail: 
+                            if _2.__tag == "Left"
+                              then 
+                                let
+                                  r = _2.__field0;
+                                in
+                                  c r
+                              else __fail;
+                          __pattern1 = __fail: 
+                            if _2.__tag == "Right"
+                              then 
+                                let
+                                  _3 = _2.__field0;
+                                in
+                                  
+                                  let
+                                    __pattern0 = __fail: 
+                                      if _3.__tag == "Left"
+                                        then 
+                                          let
+                                            r = _3.__field0;
+                                          in
+                                            d r
+                                        else __fail;
+                                    __pattern1 = __fail: 
+                                      if _3.__tag == "Right"
+                                        then 
+                                          let
+                                            _4 = _3.__field0;
+                                          in
+                                            
+                                            let
+                                              __pattern0 = __fail: 
+                                                if _4.__tag == "Left"
+                                                  then 
+                                                    let
+                                                      r = _4.__field0;
+                                                    in
+                                                      e r
+                                                  else __fail;
+                                              __pattern1 = __fail: 
+                                                if _4.__tag == "Right"
+                                                  then 
+                                                    let
+                                                      _5 = _4.__field0;
+                                                    in
+                                                      
+                                                      let
+                                                        __pattern0 = __fail: 
+                                                          if _5.__tag == "Left"
+                                                            then 
+                                                              let
+                                                                r = _5.__field0;
+                                                              in
+                                                                f r
+                                                            else __fail;
+                                                        __pattern1 = __fail: 
+                                                          if _5.__tag == "Right"
+                                                            then 
+                                                              let
+                                                                _6 = _5.__field0;
+                                                              in
+                                                                
+                                                                let
+                                                                  __pattern0 = __fail: 
+                                                                    if _6.__tag == "Left"
+                                                                      then 
+                                                                        let
+                                                                          r = _6.__field0;
+                                                                        in
+                                                                          g r
+                                                                      else __fail;
+                                                                  __pattern1 = __fail: 
+                                                                    if _6.__tag == "Right"
+                                                                      then 
+                                                                        let
+                                                                          _7 = _6.__field0;
+                                                                        in
+                                                                          
+                                                                          let
+                                                                            __pattern0 = __fail: 
+                                                                              if _7.__tag == "Left"
+                                                                                then 
+                                                                                  let
+                                                                                    r = _7.__field0;
+                                                                                  in
+                                                                                    h r
+                                                                                else __fail;
+                                                                            __pattern1 = __fail: 
+                                                                              if _7.__tag == "Right"
+                                                                                then 
+                                                                                  let
+                                                                                    _8 = _7.__field0;
+                                                                                  in
+                                                                                    module."Data.Void".absurd _8
+                                                                                else __fail;
+                                                                            __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 232:27 - 234:38";
+                                                                          in
+                                                                            __pattern0 (__pattern1 __patternFail)
+                                                                      else __fail;
+                                                                  __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 230:25 - 234:38";
+                                                                in
+                                                                  __pattern0 (__pattern1 __patternFail)
+                                                            else __fail;
+                                                        __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 228:23 - 234:38";
+                                                      in
+                                                        __pattern0 (__pattern1 __patternFail)
+                                                  else __fail;
+                                              __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 226:21 - 234:38";
+                                            in
+                                              __pattern0 (__pattern1 __patternFail)
+                                        else __fail;
+                                    __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 224:19 - 234:38";
+                                  in
+                                    __pattern0 (__pattern1 __patternFail)
+                              else __fail;
+                          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 222:17 - 234:38";
+                        in
+                          __pattern0 (__pattern1 __patternFail)
+                    else __fail;
+                __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 220:15 - 234:38";
+              in
+                __pattern0 (__pattern1 __patternFail)
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 218:29 - 234:38";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  either7 = a: b: c: d: e: f: g: y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Left"
+          then 
+            let
+              r = y.__field0;
+            in
+              a r
+          else __fail;
+      __pattern1 = __fail: 
+        if y.__tag == "Right"
+          then 
+            let
+              _1 = y.__field0;
+            in
+              
+              let
+                __pattern0 = __fail: 
+                  if _1.__tag == "Left"
+                    then 
+                      let
+                        r = _1.__field0;
+                      in
+                        b r
+                    else __fail;
+                __pattern1 = __fail: 
+                  if _1.__tag == "Right"
+                    then 
+                      let
+                        _2 = _1.__field0;
+                      in
+                        
+                        let
+                          __pattern0 = __fail: 
+                            if _2.__tag == "Left"
+                              then 
+                                let
+                                  r = _2.__field0;
+                                in
+                                  c r
+                              else __fail;
+                          __pattern1 = __fail: 
+                            if _2.__tag == "Right"
+                              then 
+                                let
+                                  _3 = _2.__field0;
+                                in
+                                  
+                                  let
+                                    __pattern0 = __fail: 
+                                      if _3.__tag == "Left"
+                                        then 
+                                          let
+                                            r = _3.__field0;
+                                          in
+                                            d r
+                                        else __fail;
+                                    __pattern1 = __fail: 
+                                      if _3.__tag == "Right"
+                                        then 
+                                          let
+                                            _4 = _3.__field0;
+                                          in
+                                            
+                                            let
+                                              __pattern0 = __fail: 
+                                                if _4.__tag == "Left"
+                                                  then 
+                                                    let
+                                                      r = _4.__field0;
+                                                    in
+                                                      e r
+                                                  else __fail;
+                                              __pattern1 = __fail: 
+                                                if _4.__tag == "Right"
+                                                  then 
+                                                    let
+                                                      _5 = _4.__field0;
+                                                    in
+                                                      
+                                                      let
+                                                        __pattern0 = __fail: 
+                                                          if _5.__tag == "Left"
+                                                            then 
+                                                              let
+                                                                r = _5.__field0;
+                                                              in
+                                                                f r
+                                                            else __fail;
+                                                        __pattern1 = __fail: 
+                                                          if _5.__tag == "Right"
+                                                            then 
+                                                              let
+                                                                _6 = _5.__field0;
+                                                              in
+                                                                
+                                                                let
+                                                                  __pattern0 = __fail: 
+                                                                    if _6.__tag == "Left"
+                                                                      then 
+                                                                        let
+                                                                          r = _6.__field0;
+                                                                        in
+                                                                          g r
+                                                                      else __fail;
+                                                                  __pattern1 = __fail: 
+                                                                    if _6.__tag == "Right"
+                                                                      then 
+                                                                        let
+                                                                          _7 = _6.__field0;
+                                                                        in
+                                                                          module."Data.Void".absurd _7
+                                                                      else __fail;
+                                                                  __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 213:25 - 215:36";
+                                                                in
+                                                                  __pattern0 (__pattern1 __patternFail)
+                                                            else __fail;
+                                                        __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 211:23 - 215:36";
+                                                      in
+                                                        __pattern0 (__pattern1 __patternFail)
+                                                  else __fail;
+                                              __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 209:21 - 215:36";
+                                            in
+                                              __pattern0 (__pattern1 __patternFail)
+                                        else __fail;
+                                    __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 207:19 - 215:36";
+                                  in
+                                    __pattern0 (__pattern1 __patternFail)
+                              else __fail;
+                          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 205:17 - 215:36";
+                        in
+                          __pattern0 (__pattern1 __patternFail)
+                    else __fail;
+                __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 203:15 - 215:36";
+              in
+                __pattern0 (__pattern1 __patternFail)
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 201:27 - 215:36";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  either6 = a: b: c: d: e: f: y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Left"
+          then 
+            let
+              r = y.__field0;
+            in
+              a r
+          else __fail;
+      __pattern1 = __fail: 
+        if y.__tag == "Right"
+          then 
+            let
+              _1 = y.__field0;
+            in
+              
+              let
+                __pattern0 = __fail: 
+                  if _1.__tag == "Left"
+                    then 
+                      let
+                        r = _1.__field0;
+                      in
+                        b r
+                    else __fail;
+                __pattern1 = __fail: 
+                  if _1.__tag == "Right"
+                    then 
+                      let
+                        _2 = _1.__field0;
+                      in
+                        
+                        let
+                          __pattern0 = __fail: 
+                            if _2.__tag == "Left"
+                              then 
+                                let
+                                  r = _2.__field0;
+                                in
+                                  c r
+                              else __fail;
+                          __pattern1 = __fail: 
+                            if _2.__tag == "Right"
+                              then 
+                                let
+                                  _3 = _2.__field0;
+                                in
+                                  
+                                  let
+                                    __pattern0 = __fail: 
+                                      if _3.__tag == "Left"
+                                        then 
+                                          let
+                                            r = _3.__field0;
+                                          in
+                                            d r
+                                        else __fail;
+                                    __pattern1 = __fail: 
+                                      if _3.__tag == "Right"
+                                        then 
+                                          let
+                                            _4 = _3.__field0;
+                                          in
+                                            
+                                            let
+                                              __pattern0 = __fail: 
+                                                if _4.__tag == "Left"
+                                                  then 
+                                                    let
+                                                      r = _4.__field0;
+                                                    in
+                                                      e r
+                                                  else __fail;
+                                              __pattern1 = __fail: 
+                                                if _4.__tag == "Right"
+                                                  then 
+                                                    let
+                                                      _5 = _4.__field0;
+                                                    in
+                                                      
+                                                      let
+                                                        __pattern0 = __fail: 
+                                                          if _5.__tag == "Left"
+                                                            then 
+                                                              let
+                                                                r = _5.__field0;
+                                                              in
+                                                                f r
+                                                            else __fail;
+                                                        __pattern1 = __fail: 
+                                                          if _5.__tag == "Right"
+                                                            then 
+                                                              let
+                                                                _6 = _5.__field0;
+                                                              in
+                                                                module."Data.Void".absurd _6
+                                                            else __fail;
+                                                        __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 196:23 - 198:34";
+                                                      in
+                                                        __pattern0 (__pattern1 __patternFail)
+                                                  else __fail;
+                                              __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 194:21 - 198:34";
+                                            in
+                                              __pattern0 (__pattern1 __patternFail)
+                                        else __fail;
+                                    __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 192:19 - 198:34";
+                                  in
+                                    __pattern0 (__pattern1 __patternFail)
+                              else __fail;
+                          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 190:17 - 198:34";
+                        in
+                          __pattern0 (__pattern1 __patternFail)
+                    else __fail;
+                __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 188:15 - 198:34";
+              in
+                __pattern0 (__pattern1 __patternFail)
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 186:25 - 198:34";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  either5 = a: b: c: d: e: y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Left"
+          then 
+            let
+              r = y.__field0;
+            in
+              a r
+          else __fail;
+      __pattern1 = __fail: 
+        if y.__tag == "Right"
+          then 
+            let
+              _1 = y.__field0;
+            in
+              
+              let
+                __pattern0 = __fail: 
+                  if _1.__tag == "Left"
+                    then 
+                      let
+                        r = _1.__field0;
+                      in
+                        b r
+                    else __fail;
+                __pattern1 = __fail: 
+                  if _1.__tag == "Right"
+                    then 
+                      let
+                        _2 = _1.__field0;
+                      in
+                        
+                        let
+                          __pattern0 = __fail: 
+                            if _2.__tag == "Left"
+                              then 
+                                let
+                                  r = _2.__field0;
+                                in
+                                  c r
+                              else __fail;
+                          __pattern1 = __fail: 
+                            if _2.__tag == "Right"
+                              then 
+                                let
+                                  _3 = _2.__field0;
+                                in
+                                  
+                                  let
+                                    __pattern0 = __fail: 
+                                      if _3.__tag == "Left"
+                                        then 
+                                          let
+                                            r = _3.__field0;
+                                          in
+                                            d r
+                                        else __fail;
+                                    __pattern1 = __fail: 
+                                      if _3.__tag == "Right"
+                                        then 
+                                          let
+                                            _4 = _3.__field0;
+                                          in
+                                            
+                                            let
+                                              __pattern0 = __fail: 
+                                                if _4.__tag == "Left"
+                                                  then 
+                                                    let
+                                                      r = _4.__field0;
+                                                    in
+                                                      e r
+                                                  else __fail;
+                                              __pattern1 = __fail: 
+                                                if _4.__tag == "Right"
+                                                  then 
+                                                    let
+                                                      _5 = _4.__field0;
+                                                    in
+                                                      module."Data.Void".absurd _5
+                                                  else __fail;
+                                              __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 181:21 - 183:32";
+                                            in
+                                              __pattern0 (__pattern1 __patternFail)
+                                        else __fail;
+                                    __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 179:19 - 183:32";
+                                  in
+                                    __pattern0 (__pattern1 __patternFail)
+                              else __fail;
+                          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 177:17 - 183:32";
+                        in
+                          __pattern0 (__pattern1 __patternFail)
+                    else __fail;
+                __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 175:15 - 183:32";
+              in
+                __pattern0 (__pattern1 __patternFail)
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 173:23 - 183:32";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  either4 = a: b: c: d: y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Left"
+          then 
+            let
+              r = y.__field0;
+            in
+              a r
+          else __fail;
+      __pattern1 = __fail: 
+        if y.__tag == "Right"
+          then 
+            let
+              _1 = y.__field0;
+            in
+              
+              let
+                __pattern0 = __fail: 
+                  if _1.__tag == "Left"
+                    then 
+                      let
+                        r = _1.__field0;
+                      in
+                        b r
+                    else __fail;
+                __pattern1 = __fail: 
+                  if _1.__tag == "Right"
+                    then 
+                      let
+                        _2 = _1.__field0;
+                      in
+                        
+                        let
+                          __pattern0 = __fail: 
+                            if _2.__tag == "Left"
+                              then 
+                                let
+                                  r = _2.__field0;
+                                in
+                                  c r
+                              else __fail;
+                          __pattern1 = __fail: 
+                            if _2.__tag == "Right"
+                              then 
+                                let
+                                  _3 = _2.__field0;
+                                in
+                                  
+                                  let
+                                    __pattern0 = __fail: 
+                                      if _3.__tag == "Left"
+                                        then 
+                                          let
+                                            r = _3.__field0;
+                                          in
+                                            d r
+                                        else __fail;
+                                    __pattern1 = __fail: 
+                                      if _3.__tag == "Right"
+                                        then 
+                                          let
+                                            _4 = _3.__field0;
+                                          in
+                                            module."Data.Void".absurd _4
+                                        else __fail;
+                                    __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 168:19 - 170:30";
+                                  in
+                                    __pattern0 (__pattern1 __patternFail)
+                              else __fail;
+                          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 166:17 - 170:30";
+                        in
+                          __pattern0 (__pattern1 __patternFail)
+                    else __fail;
+                __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 164:15 - 170:30";
+              in
+                __pattern0 (__pattern1 __patternFail)
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 162:21 - 170:30";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  either3 = a: b: c: y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Left"
+          then 
+            let
+              r = y.__field0;
+            in
+              a r
+          else __fail;
+      __pattern1 = __fail: 
+        if y.__tag == "Right"
+          then 
+            let
+              _1 = y.__field0;
+            in
+              
+              let
+                __pattern0 = __fail: 
+                  if _1.__tag == "Left"
+                    then 
+                      let
+                        r = _1.__field0;
+                      in
+                        b r
+                    else __fail;
+                __pattern1 = __fail: 
+                  if _1.__tag == "Right"
+                    then 
+                      let
+                        _2 = _1.__field0;
+                      in
+                        
+                        let
+                          __pattern0 = __fail: 
+                            if _2.__tag == "Left"
+                              then 
+                                let
+                                  r = _2.__field0;
+                                in
+                                  c r
+                              else __fail;
+                          __pattern1 = __fail: 
+                            if _2.__tag == "Right"
+                              then 
+                                let
+                                  _3 = _2.__field0;
+                                in
+                                  module."Data.Void".absurd _3
+                              else __fail;
+                          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 157:17 - 159:28";
+                        in
+                          __pattern0 (__pattern1 __patternFail)
+                    else __fail;
+                __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 155:15 - 159:28";
+              in
+                __pattern0 (__pattern1 __patternFail)
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 153:19 - 159:28";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  either2 = a: b: y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Left"
+          then 
+            let
+              r = y.__field0;
+            in
+              a r
+          else __fail;
+      __pattern1 = __fail: 
+        if y.__tag == "Right"
+          then 
+            let
+              _1 = y.__field0;
+            in
+              
+              let
+                __pattern0 = __fail: 
+                  if _1.__tag == "Left"
+                    then 
+                      let
+                        r = _1.__field0;
+                      in
+                        b r
+                    else __fail;
+                __pattern1 = __fail: 
+                  if _1.__tag == "Right"
+                    then 
+                      let
+                        _2 = _1.__field0;
+                      in
+                        module."Data.Void".absurd _2
+                    else __fail;
+                __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 148:15 - 150:26";
+              in
+                __pattern0 (__pattern1 __patternFail)
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 146:17 - 150:26";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  either10 = a: b: c: d: e: f: g: h: i: j: y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Left"
+          then 
+            let
+              r = y.__field0;
+            in
+              a r
+          else __fail;
+      __pattern1 = __fail: 
+        if y.__tag == "Right"
+          then 
+            let
+              _1 = y.__field0;
+            in
+              
+              let
+                __pattern0 = __fail: 
+                  if _1.__tag == "Left"
+                    then 
+                      let
+                        r = _1.__field0;
+                      in
+                        b r
+                    else __fail;
+                __pattern1 = __fail: 
+                  if _1.__tag == "Right"
+                    then 
+                      let
+                        _2 = _1.__field0;
+                      in
+                        
+                        let
+                          __pattern0 = __fail: 
+                            if _2.__tag == "Left"
+                              then 
+                                let
+                                  r = _2.__field0;
+                                in
+                                  c r
+                              else __fail;
+                          __pattern1 = __fail: 
+                            if _2.__tag == "Right"
+                              then 
+                                let
+                                  _3 = _2.__field0;
+                                in
+                                  
+                                  let
+                                    __pattern0 = __fail: 
+                                      if _3.__tag == "Left"
+                                        then 
+                                          let
+                                            r = _3.__field0;
+                                          in
+                                            d r
+                                        else __fail;
+                                    __pattern1 = __fail: 
+                                      if _3.__tag == "Right"
+                                        then 
+                                          let
+                                            _4 = _3.__field0;
+                                          in
+                                            
+                                            let
+                                              __pattern0 = __fail: 
+                                                if _4.__tag == "Left"
+                                                  then 
+                                                    let
+                                                      r = _4.__field0;
+                                                    in
+                                                      e r
+                                                  else __fail;
+                                              __pattern1 = __fail: 
+                                                if _4.__tag == "Right"
+                                                  then 
+                                                    let
+                                                      _5 = _4.__field0;
+                                                    in
+                                                      
+                                                      let
+                                                        __pattern0 = __fail: 
+                                                          if _5.__tag == "Left"
+                                                            then 
+                                                              let
+                                                                r = _5.__field0;
+                                                              in
+                                                                f r
+                                                            else __fail;
+                                                        __pattern1 = __fail: 
+                                                          if _5.__tag == "Right"
+                                                            then 
+                                                              let
+                                                                _6 = _5.__field0;
+                                                              in
+                                                                
+                                                                let
+                                                                  __pattern0 = __fail: 
+                                                                    if _6.__tag == "Left"
+                                                                      then 
+                                                                        let
+                                                                          r = _6.__field0;
+                                                                        in
+                                                                          g r
+                                                                      else __fail;
+                                                                  __pattern1 = __fail: 
+                                                                    if _6.__tag == "Right"
+                                                                      then 
+                                                                        let
+                                                                          _7 = _6.__field0;
+                                                                        in
+                                                                          
+                                                                          let
+                                                                            __pattern0 = __fail: 
+                                                                              if _7.__tag == "Left"
+                                                                                then 
+                                                                                  let
+                                                                                    r = _7.__field0;
+                                                                                  in
+                                                                                    h r
+                                                                                else __fail;
+                                                                            __pattern1 = __fail: 
+                                                                              if _7.__tag == "Right"
+                                                                                then 
+                                                                                  let
+                                                                                    _8 = _7.__field0;
+                                                                                  in
+                                                                                    
+                                                                                    let
+                                                                                      __pattern0 = __fail: 
+                                                                                        if _8.__tag == "Left"
+                                                                                          then 
+                                                                                            let
+                                                                                              r = _8.__field0;
+                                                                                            in
+                                                                                              i r
+                                                                                          else __fail;
+                                                                                      __pattern1 = __fail: 
+                                                                                        if _8.__tag == "Right"
+                                                                                          then 
+                                                                                            let
+                                                                                              _9 = _8.__field0;
+                                                                                            in
+                                                                                              
+                                                                                              let
+                                                                                                __pattern0 = __fail: 
+                                                                                                  if _9.__tag == "Left"
+                                                                                                    then 
+                                                                                                      let
+                                                                                                        r = _9.__field0;
+                                                                                                      in
+                                                                                                        j r
+                                                                                                    else __fail;
+                                                                                                __pattern1 = __fail: 
+                                                                                                  if _9.__tag == "Right"
+                                                                                                    then 
+                                                                                                      let
+                                                                                                        _10 = _9.__field0;
+                                                                                                      in
+                                                                                                        module."Data.Void".absurd _10
+                                                                                                    else __fail;
+                                                                                                __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 276:31 - 278:44";
+                                                                                              in
+                                                                                                __pattern0 (__pattern1 __patternFail)
+                                                                                          else __fail;
+                                                                                      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 274:29 - 278:44";
+                                                                                    in
+                                                                                      __pattern0 (__pattern1 __patternFail)
+                                                                                else __fail;
+                                                                            __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 272:27 - 278:44";
+                                                                          in
+                                                                            __pattern0 (__pattern1 __patternFail)
+                                                                      else __fail;
+                                                                  __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 270:25 - 278:44";
+                                                                in
+                                                                  __pattern0 (__pattern1 __patternFail)
+                                                            else __fail;
+                                                        __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 268:23 - 278:44";
+                                                      in
+                                                        __pattern0 (__pattern1 __patternFail)
+                                                  else __fail;
+                                              __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 266:21 - 278:44";
+                                            in
+                                              __pattern0 (__pattern1 __patternFail)
+                                        else __fail;
+                                    __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 264:19 - 278:44";
+                                  in
+                                    __pattern0 (__pattern1 __patternFail)
+                              else __fail;
+                          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 262:17 - 278:44";
+                        in
+                          __pattern0 (__pattern1 __patternFail)
+                    else __fail;
+                __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 260:15 - 278:44";
+              in
+                __pattern0 (__pattern1 __patternFail)
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 258:34 - 278:44";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  either1 = y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Left"
+          then 
+            let
+              r = y.__field0;
+            in
+              r
+          else __fail;
+      __pattern1 = __fail: 
+        if y.__tag == "Right"
+          then 
+            let
+              _1 = y.__field0;
+            in
+              module."Data.Void".absurd _1
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 141:13 - 143:24";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  at9 = b: f: y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Right" && y.__field0.__tag == "Right" && y.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Left"
+          then 
+            let
+              r = y.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0;
+            in
+              f r
+          else __fail;
+      __pattern1 = __fail: b;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 131:13 - 133:9";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  at8 = b: f: y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Right" && y.__field0.__tag == "Right" && y.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Left"
+          then 
+            let
+              r = y.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0;
+            in
+              f r
+          else __fail;
+      __pattern1 = __fail: b;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 126:13 - 128:9";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  at7 = b: f: y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Right" && y.__field0.__tag == "Right" && y.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Left"
+          then 
+            let
+              r = y.__field0.__field0.__field0.__field0.__field0.__field0.__field0;
+            in
+              f r
+          else __fail;
+      __pattern1 = __fail: b;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 121:13 - 123:9";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  at6 = b: f: y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Right" && y.__field0.__tag == "Right" && y.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__field0.__tag == "Left"
+          then 
+            let
+              r = y.__field0.__field0.__field0.__field0.__field0.__field0;
+            in
+              f r
+          else __fail;
+      __pattern1 = __fail: b;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 116:13 - 118:9";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  at5 = b: f: y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Right" && y.__field0.__tag == "Right" && y.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__tag == "Left"
+          then 
+            let
+              r = y.__field0.__field0.__field0.__field0.__field0;
+            in
+              f r
+          else __fail;
+      __pattern1 = __fail: b;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 111:13 - 113:9";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  at4 = b: f: y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Right" && y.__field0.__tag == "Right" && y.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__tag == "Left"
+          then 
+            let
+              r = y.__field0.__field0.__field0.__field0;
+            in
+              f r
+          else __fail;
+      __pattern1 = __fail: b;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 106:13 - 108:9";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  at3 = b: f: y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Right" && y.__field0.__tag == "Right" && y.__field0.__field0.__tag == "Left"
+          then 
+            let
+              r = y.__field0.__field0.__field0;
+            in
+              f r
+          else __fail;
+      __pattern1 = __fail: b;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 101:13 - 103:9";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  at2 = b: f: y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Right" && y.__field0.__tag == "Left"
+          then 
+            let
+              r = y.__field0.__field0;
+            in
+              f r
+          else __fail;
+      __pattern1 = __fail: b;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 96:13 - 98:9";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  at10 = b: f: y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Right" && y.__field0.__tag == "Right" && y.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Left"
+          then 
+            let
+              r = y.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0;
+            in
+              f r
+          else __fail;
+      __pattern1 = __fail: b;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 136:14 - 138:9";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  at1 = b: f: y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Left"
+          then 
+            let
+              r = y.__field0;
+            in
+              f r
+          else __fail;
+      __pattern1 = __fail: b;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either/Nested.purs at 91:13 - 93:9";
+    in
+      __pattern0 (__pattern1 __patternFail);
+in
+  {inherit in1 in2 in3 in4 in5 in6 in7 in8 in9 in10 at1 at2 at3 at4 at5 at6 at7 at8 at9 at10 either1 either2 either3 either4 either5 either6 either7 either8 either9 either10;}
+;
+
+LocalDependency-Data-Either_default-nix = 
+let
+  module = 
+    { "Control.Applicative" = Control-Applicative_default-nix;
+      "Control.Apply" = Control-Apply_default-nix;
+      "Control.Bind" = Control-Bind_default-nix;
+      "Control.Monad" = Control-Monad_default-nix;
+      "Control.Semigroupoid" = Control-Semigroupoid_default-nix;
+      "Data.Bounded" = Data-Bounded_default-nix;
+      "Data.Eq" = Data-Eq_default-nix;
+      "Data.Function" = Data-Function_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.Generic.Rep" = Data-Generic-Rep_default-nix;
+      "Data.Ord" = Data-Ord_default-nix;
+      "Data.Ordering" = Data-Ordering_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+      "Data.Show" = Data-Show_default-nix;
+      "Data.Unit" = Data-Unit_default-nix;
+      "LocalDependency.Control.Alt" = LocalDependency-Control-Alt_default-nix;
+      "LocalDependency.Control.Extend" = LocalDependency-Control-Extend_default-nix;
+      "LocalDependency.Data.Functor.Invariant" = LocalDependency-Data-Functor-Invariant_default-nix;
+      "LocalDependency.Data.Maybe" = LocalDependency-Data-Maybe_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  Left = value0: 
+    { __tag = "Left";
+      __field0 = value0;
+    };
+  Right = value0: 
+    { __tag = "Right";
+      __field0 = value0;
+    };
+  showEither = dictShow: dictShow1: 
+    { show = v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Left"
+              then 
+                let
+                  x = v.__field0;
+                in
+                  module."Data.Semigroup".append module."Data.Semigroup".semigroupString "(Left " (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Show".show dictShow x) ")")
+              else __fail;
+          __pattern1 = __fail: 
+            if v.__tag == "Right"
+              then 
+                let
+                  y = v.__field0;
+                in
+                  module."Data.Semigroup".append module."Data.Semigroup".semigroupString "(Right " (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Show".show dictShow1 y) ")")
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either.purs at 173:1 - 175:46";
+        in
+          __pattern0 (__pattern1 __patternFail);
+    };
+  note' = f: module."LocalDependency.Data.Maybe".maybe' (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn Left f) Right;
+  note = a: module."LocalDependency.Data.Maybe".maybe (Left a) Right;
+  genericEither = 
+    { to = x: 
+        let
+          __pattern0 = __fail: 
+            if x.__tag == "Inl"
+              then 
+                let
+                  arg = x.__field0;
+                in
+                  Left arg
+              else __fail;
+          __pattern1 = __fail: 
+            if x.__tag == "Inr"
+              then 
+                let
+                  arg = x.__field0;
+                in
+                  Right arg
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either.purs at 33:1 - 33:56";
+        in
+          __pattern0 (__pattern1 __patternFail);
+      from = x: 
+        let
+          __pattern0 = __fail: 
+            if x.__tag == "Left"
+              then 
+                let
+                  arg = x.__field0;
+                in
+                  module."Data.Generic.Rep".Inl arg
+              else __fail;
+          __pattern1 = __fail: 
+            if x.__tag == "Right"
+              then 
+                let
+                  arg = x.__field0;
+                in
+                  module."Data.Generic.Rep".Inr arg
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either.purs at 33:1 - 33:56";
+        in
+          __pattern0 (__pattern1 __patternFail);
+    };
+  functorEither = 
+    { map = f: m: 
+        let
+          __pattern0 = __fail: 
+            if m.__tag == "Left"
+              then 
+                let
+                  v = m.__field0;
+                in
+                  Left v
+              else __fail;
+          __pattern1 = __fail: 
+            if m.__tag == "Right"
+              then 
+                let
+                  v = m.__field0;
+                in
+                  Right (f v)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either.purs at 31:1 - 31:52";
+        in
+          __pattern0 (__pattern1 __patternFail);
+    };
+  invariantEither = {imap = module."LocalDependency.Data.Functor.Invariant".imapF functorEither;};
+  fromRight' = v: v1: 
+    let
+      __pattern0 = __fail: 
+        if v1.__tag == "Right"
+          then 
+            let
+              b = v1.__field0;
+            in
+              b
+          else __fail;
+      __pattern1 = __fail: 
+        let
+          default = v;
+        in
+          default module."Data.Unit".unit;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either.purs at 252:1 - 252:57";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  fromRight = v: v1: 
+    let
+      __pattern0 = __fail: 
+        if v1.__tag == "Right"
+          then 
+            let
+              b = v1.__field0;
+            in
+              b
+          else __fail;
+      __pattern1 = __fail: 
+        let
+          default = v;
+        in
+          default;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either.purs at 243:1 - 243:46";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  fromLeft' = v: v1: 
+    let
+      __pattern0 = __fail: 
+        if v1.__tag == "Left"
+          then 
+            let
+              a = v1.__field0;
+            in
+              a
+          else __fail;
+      __pattern1 = __fail: 
+        let
+          default = v;
+        in
+          default module."Data.Unit".unit;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either.purs at 236:1 - 236:56";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  fromLeft = v: v1: 
+    let
+      __pattern0 = __fail: 
+        if v1.__tag == "Left"
+          then 
+            let
+              a = v1.__field0;
+            in
+              a
+          else __fail;
+      __pattern1 = __fail: 
+        let
+          default = v;
+        in
+          default;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either.purs at 227:1 - 227:45";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  extendEither = 
+    { extend = v: v1: 
+        let
+          __pattern0 = __fail: 
+            if v1.__tag == "Left"
+              then 
+                let
+                  y = v1.__field0;
+                in
+                  Left y
+              else __fail;
+          __pattern1 = __fail: 
+            let
+              f = v;
+              x = v1;
+            in
+              Right (f x);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either.purs at 166:1 - 168:35";
+        in
+          __pattern0 (__pattern1 __patternFail);
+      "Functor0" = __unused: functorEither;
+    };
+  eqEither = dictEq: dictEq1: 
+    { eq = x: y: 
+        let
+          __pattern0 = __fail: 
+            if x.__tag == "Left" && y.__tag == "Left"
+              then 
+                let
+                  l = x.__field0;
+                  r = y.__field0;
+                in
+                  module."Data.Eq".eq dictEq l r
+              else __fail;
+          __pattern1 = __fail: 
+            if x.__tag == "Right" && y.__tag == "Right"
+              then 
+                let
+                  l = x.__field0;
+                  r = y.__field0;
+                in
+                  module."Data.Eq".eq dictEq1 l r
+              else __fail;
+          __pattern2 = __fail: false;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either.purs at 180:1 - 180:60";
+        in
+          __pattern0 (__pattern1 (__pattern2 __patternFail));
+    };
+  ordEither = dictOrd: dictOrd1: 
+    { compare = x: y: 
+        let
+          __pattern0 = __fail: 
+            if x.__tag == "Left" && y.__tag == "Left"
+              then 
+                let
+                  l = x.__field0;
+                  r = y.__field0;
+                in
+                  module."Data.Ord".compare dictOrd l r
+              else __fail;
+          __pattern1 = __fail: if x.__tag == "Left" then module."Data.Ordering".LT else __fail;
+          __pattern2 = __fail: if y.__tag == "Left" then module."Data.Ordering".GT else __fail;
+          __pattern3 = __fail: 
+            if x.__tag == "Right" && y.__tag == "Right"
+              then 
+                let
+                  l = x.__field0;
+                  r = y.__field0;
+                in
+                  module."Data.Ord".compare dictOrd1 l r
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either.purs at 189:1 - 189:64";
+        in
+          __pattern0 (__pattern1 (__pattern2 (__pattern3 __patternFail)));
+      "Eq0" = __unused: eqEither (dictOrd."Eq0" module."Prim".undefined) (dictOrd1."Eq0" module."Prim".undefined);
+    };
+  eq1Either = dictEq: {eq1 = dictEq1: module."Data.Eq".eq (eqEither dictEq dictEq1);};
+  ord1Either = dictOrd: 
+    { compare1 = dictOrd1: module."Data.Ord".compare (ordEither dictOrd dictOrd1);
+      "Eq10" = __unused: eq1Either (dictOrd."Eq0" module."Prim".undefined);
+    };
+  either = v: v1: v2: 
+    let
+      __pattern0 = __fail: 
+        if v2.__tag == "Left"
+          then 
+            let
+              f = v;
+              a = v2.__field0;
+            in
+              f a
+          else __fail;
+      __pattern1 = __fail: 
+        if v2.__tag == "Right"
+          then 
+            let
+              g = v1;
+              b = v2.__field0;
+            in
+              g b
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either.purs at 208:1 - 208:64";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  hush = either (module."Data.Function".const module."LocalDependency.Data.Maybe".Nothing) module."LocalDependency.Data.Maybe".Just;
+  isLeft = either (module."Data.Function".const true) (module."Data.Function".const false);
+  isRight = either (module."Data.Function".const false) (module."Data.Function".const true);
+  choose = dictAlt: a: b: module."LocalDependency.Control.Alt".alt dictAlt (module."Data.Functor".map (dictAlt."Functor0" module."Prim".undefined) Left a) (module."Data.Functor".map (dictAlt."Functor0" module."Prim".undefined) Right b);
+  boundedEither = dictBounded: dictBounded1: 
+    { top = Right (module."Data.Bounded".top dictBounded1);
+      bottom = Left (module."Data.Bounded".bottom dictBounded);
+      "Ord0" = __unused: ordEither (dictBounded."Ord0" module."Prim".undefined) (dictBounded1."Ord0" module."Prim".undefined);
+    };
+  applyEither = 
+    { apply = v: v1: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Left"
+              then 
+                let
+                  e = v.__field0;
+                in
+                  Left e
+              else __fail;
+          __pattern1 = __fail: 
+            if v.__tag == "Right"
+              then 
+                let
+                  f = v.__field0;
+                  r = v1;
+                in
+                  module."Data.Functor".map functorEither f r
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either.purs at 70:1 - 72:30";
+        in
+          __pattern0 (__pattern1 __patternFail);
+      "Functor0" = __unused: functorEither;
+    };
+  bindEither = 
+    { bind = either (e: v: Left e) (a: f: f a);
+      "Apply0" = __unused: applyEither;
+    };
+  semigroupEither = dictSemigroup: {append = x: y: module."Control.Apply".apply applyEither (module."Data.Functor".map functorEither (module."Data.Semigroup".append dictSemigroup) x) y;};
+  applicativeEither = 
+    { pure = Right;
+      "Apply0" = __unused: applyEither;
+    };
+  monadEither = 
+    { "Applicative0" = __unused: applicativeEither;
+      "Bind1" = __unused: bindEither;
+    };
+  altEither = 
+    { alt = v: v1: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Left"
+              then 
+                let
+                  r = v1;
+                in
+                  r
+              else __fail;
+          __pattern1 = __fail: 
+            let
+              l = v;
+            in
+              l;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/either/Data/Either.purs at 105:1 - 107:21";
+        in
+          __pattern0 (__pattern1 __patternFail);
+      "Functor0" = __unused: functorEither;
+    };
+in
+  {inherit Left Right either choose isLeft isRight fromLeft fromLeft' fromRight fromRight' note note' hush functorEither genericEither invariantEither applyEither applicativeEither altEither bindEither monadEither extendEither showEither eqEither eq1Either ordEither ord1Either boundedEither semigroupEither;}
+;
+
+LocalDependency-Data-Equivalence_default-nix = 
+let
+  module = 
+    { "Data.Eq" = Data-Eq_default-nix;
+      "Data.Function" = Data-Function_default-nix;
+      "Data.HeytingAlgebra" = Data-HeytingAlgebra_default-nix;
+      "Data.Monoid" = Data-Monoid_default-nix;
+      "Data.Newtype" = Data-Newtype_default-nix;
+      "Data.Ordering" = Data-Ordering_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+      "LocalDependency.Data.Comparison" = LocalDependency-Data-Comparison_default-nix;
+      "LocalDependency.Data.Functor.Contravariant" = LocalDependency-Data-Functor-Contravariant_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  Equivalence = x: x;
+  semigroupEquivalence = 
+    { append = v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              p = v;
+              q = v1;
+            in
+              a: b: module."Data.HeytingAlgebra".conj module."Data.HeytingAlgebra".heytingAlgebraBoolean (p a b) (q a b);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/contravariant/Data/Equivalence.purs at 19:1 - 20:80";
+        in
+          __pattern0 __patternFail;
+    };
+  newtypeEquivalence = {"Coercible0" = __unused: module."Prim".undefined;};
+  monoidEquivalence = 
+    { mempty = v: v1: true;
+      "Semigroup0" = __unused: semigroupEquivalence;
+    };
+  defaultEquivalence = dictEq: module."Data.Eq".eq dictEq;
+  contravariantEquivalence = 
+    { cmap = f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              g = v;
+            in
+              module."Data.Function".on g f1;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/contravariant/Data/Equivalence.purs at 16:1 - 17:50";
+        in
+          __pattern0 __patternFail;
+    };
+  comparisonEquivalence = v: 
+    let
+      __pattern0 = __fail: 
+        let
+          p = v;
+        in
+          a: b: module."Data.Eq".eq module."Data.Ordering".eqOrdering (p a b) module."Data.Ordering".EQ;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/contravariant/Data/Equivalence.purs at 30:1 - 30:65";
+    in
+      __pattern0 __patternFail;
+in
+  {inherit Equivalence defaultEquivalence comparisonEquivalence newtypeEquivalence contravariantEquivalence semigroupEquivalence monoidEquivalence;}
+;
+
+LocalDependency-Data-Exists_default-nix = 
+let
+  module = {"LocalDependency.Unsafe.Coerce" = LocalDependency-Unsafe-Coerce_default-nix;};
+  runExists = module."LocalDependency.Unsafe.Coerce".unsafeCoerce;
+  mkExists = module."LocalDependency.Unsafe.Coerce".unsafeCoerce;
+in
+  {inherit mkExists runExists;}
+;
+
+LocalDependency-Data-Foldable_default-nix = 
+let
+  module = 
+    { "Control.Applicative" = Control-Applicative_default-nix;
+      "Control.Apply" = Control-Apply_default-nix;
+      "Control.Bind" = Control-Bind_default-nix;
+      "Control.Category" = Control-Category_default-nix;
+      "Control.Semigroupoid" = Control-Semigroupoid_default-nix;
+      "Data.Eq" = Data-Eq_default-nix;
+      "Data.Function" = Data-Function_default-nix;
+      "Data.HeytingAlgebra" = Data-HeytingAlgebra_default-nix;
+      "Data.Monoid" = Data-Monoid_default-nix;
+      "Data.Monoid.Additive" = Data-Monoid-Additive_default-nix;
+      "Data.Monoid.Conj" = Data-Monoid-Conj_default-nix;
+      "Data.Monoid.Disj" = Data-Monoid-Disj_default-nix;
+      "Data.Monoid.Dual" = Data-Monoid-Dual_default-nix;
+      "Data.Monoid.Endo" = Data-Monoid-Endo_default-nix;
+      "Data.Monoid.Multiplicative" = Data-Monoid-Multiplicative_default-nix;
+      "Data.Newtype" = Data-Newtype_default-nix;
+      "Data.Ord" = Data-Ord_default-nix;
+      "Data.Ordering" = Data-Ordering_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+      "Data.Semiring" = Data-Semiring_default-nix;
+      "Data.Unit" = Data-Unit_default-nix;
+      "LocalDependency.Control.Alt" = LocalDependency-Control-Alt_default-nix;
+      "LocalDependency.Control.Plus" = LocalDependency-Control-Plus_default-nix;
+      "LocalDependency.Data.Const" = LocalDependency-Data-Const_default-nix;
+      "LocalDependency.Data.Either" = LocalDependency-Data-Either_default-nix;
+      "LocalDependency.Data.Functor.App" = LocalDependency-Data-Functor-App_default-nix;
+      "LocalDependency.Data.Functor.Compose" = LocalDependency-Data-Functor-Compose_default-nix;
+      "LocalDependency.Data.Functor.Coproduct" = LocalDependency-Data-Functor-Coproduct_default-nix;
+      "LocalDependency.Data.Functor.Product" = LocalDependency-Data-Functor-Product_default-nix;
+      "LocalDependency.Data.Identity" = LocalDependency-Data-Identity_default-nix;
+      "LocalDependency.Data.Maybe" = LocalDependency-Data-Maybe_default-nix;
+      "LocalDependency.Data.Maybe.First" = LocalDependency-Data-Maybe-First_default-nix;
+      "LocalDependency.Data.Maybe.Last" = LocalDependency-Data-Maybe-Last_default-nix;
+      "LocalDependency.Data.Tuple" = LocalDependency-Data-Tuple_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  foreign = LocalDependency-Data-Foldable_foreign-nix;
+  foldrArray = foreign.foldrArray;
+  foldlArray = foreign.foldlArray;
+  Foldable-Dict = x: x;
+  foldr = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.foldr;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 74:3 - 74:54";
+    in
+      __pattern0 __patternFail;
+  indexr = dictFoldable: idx: 
+    let
+      go = a: cursor: 
+        let
+          __pattern0 = __fail: if cursor.elem.__tag == "Just" then cursor else __fail;
+          __pattern1 = __fail: 
+            let
+              __pattern0 = __fail: 
+                if module."Data.Eq".eq module."Data.Eq".eqInt cursor.pos idx
+                  then 
+                    { elem = module."LocalDependency.Data.Maybe".Just a;
+                      pos = cursor.pos;
+                    }
+                  else __fail;
+              __pattern1 = __fail: 
+                { pos = module."Data.Semiring".add module."Data.Semiring".semiringInt cursor.pos 1;
+                  elem = cursor.elem;
+                };
+              __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 413:9 - 415:58";
+            in
+              __pattern0 (__pattern1 __patternFail);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 410:5 - 415:58";
+        in
+          __pattern0 (__pattern1 __patternFail);
+    in
+      module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (v: v.elem) 
+      ( foldr dictFoldable go 
+        { elem = module."LocalDependency.Data.Maybe".Nothing;
+          pos = 0;
+        }
+      );
+  null = dictFoldable: foldr dictFoldable (v: v1: false) true;
+  oneOf = dictFoldable: dictPlus: foldr dictFoldable (module."LocalDependency.Control.Alt".alt (dictPlus."Alt0" module."Prim".undefined)) (module."LocalDependency.Control.Plus".empty dictPlus);
+  oneOfMap = dictFoldable: dictPlus: f: foldr dictFoldable (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."LocalDependency.Control.Alt".alt (dictPlus."Alt0" module."Prim".undefined)) f) (module."LocalDependency.Control.Plus".empty dictPlus);
+  traverse_ = dictApplicative: dictFoldable: f: foldr dictFoldable (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Control.Apply".applySecond (dictApplicative."Apply0" module."Prim".undefined)) f) (module."Control.Applicative".pure dictApplicative module."Data.Unit".unit);
+  for_ = dictApplicative: dictFoldable: module."Data.Function".flip (traverse_ dictApplicative dictFoldable);
+  sequence_ = dictApplicative: dictFoldable: traverse_ dictApplicative dictFoldable (module."Control.Category".identity module."Control.Category".categoryFn);
+  foldl = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.foldl;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 75:3 - 75:54";
+    in
+      __pattern0 __patternFail;
+  indexl = dictFoldable: idx: 
+    let
+      go = cursor: a: 
+        let
+          __pattern0 = __fail: if cursor.elem.__tag == "Just" then cursor else __fail;
+          __pattern1 = __fail: 
+            let
+              __pattern0 = __fail: 
+                if module."Data.Eq".eq module."Data.Eq".eqInt cursor.pos idx
+                  then 
+                    { elem = module."LocalDependency.Data.Maybe".Just a;
+                      pos = cursor.pos;
+                    }
+                  else __fail;
+              __pattern1 = __fail: 
+                { pos = module."Data.Semiring".add module."Data.Semiring".semiringInt cursor.pos 1;
+                  elem = cursor.elem;
+                };
+              __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 401:9 - 403:58";
+            in
+              __pattern0 (__pattern1 __patternFail);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 398:5 - 403:58";
+        in
+          __pattern0 (__pattern1 __patternFail);
+    in
+      module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (v: v.elem) 
+      ( foldl dictFoldable go 
+        { elem = module."LocalDependency.Data.Maybe".Nothing;
+          pos = 0;
+        }
+      );
+  intercalate = dictFoldable: dictMonoid: sep: xs: 
+    let
+      go = v: x: 
+        let
+          __pattern0 = __fail: 
+            if v.init
+              then 
+                let
+                  x1 = x;
+                in
+                  
+                  { init = false;
+                    acc = x1;
+                  }
+              else __fail;
+          __pattern1 = __fail: 
+            let
+              acc = v.acc;
+              x1 = x;
+            in
+              
+              { init = false;
+                acc = module."Data.Semigroup".append (dictMonoid."Semigroup0" module."Prim".undefined) acc (module."Data.Semigroup".append (dictMonoid."Semigroup0" module."Prim".undefined) sep x1);
+              };
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 311:3 - 311:48";
+        in
+          __pattern0 (__pattern1 __patternFail);
+    in
+      
+      ( foldl dictFoldable go 
+        { init = true;
+          acc = module."Data.Monoid".mempty dictMonoid;
+        } xs
+      ).acc;
+  length = dictFoldable: dictSemiring: foldl dictFoldable (c: v: module."Data.Semiring".add dictSemiring (module."Data.Semiring".one dictSemiring) c) (module."Data.Semiring".zero dictSemiring);
+  maximumBy = dictFoldable: cmp: 
+    let
+      max' = v: v1: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Nothing"
+              then 
+                let
+                  x = v1;
+                in
+                  module."LocalDependency.Data.Maybe".Just x
+              else __fail;
+          __pattern1 = __fail: 
+            if v.__tag == "Just"
+              then 
+                let
+                  x = v.__field0;
+                  y = v1;
+                in
+                  module."LocalDependency.Data.Maybe".Just 
+                  ( 
+                    let
+                      __pattern0 = __fail: if module."Data.Eq".eq module."Data.Ordering".eqOrdering (cmp x y) module."Data.Ordering".GT then x else __fail;
+                      __pattern1 = __fail: y;
+                      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 442:27 - 442:57";
+                    in
+                      __pattern0 (__pattern1 __patternFail)
+                  )
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 441:3 - 441:27";
+        in
+          __pattern0 (__pattern1 __patternFail);
+    in
+      foldl dictFoldable max' module."LocalDependency.Data.Maybe".Nothing;
+  maximum = dictOrd: dictFoldable: maximumBy dictFoldable (module."Data.Ord".compare dictOrd);
+  minimumBy = dictFoldable: cmp: 
+    let
+      min' = v: v1: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Nothing"
+              then 
+                let
+                  x = v1;
+                in
+                  module."LocalDependency.Data.Maybe".Just x
+              else __fail;
+          __pattern1 = __fail: 
+            if v.__tag == "Just"
+              then 
+                let
+                  x = v.__field0;
+                  y = v1;
+                in
+                  module."LocalDependency.Data.Maybe".Just 
+                  ( 
+                    let
+                      __pattern0 = __fail: if module."Data.Eq".eq module."Data.Ordering".eqOrdering (cmp x y) module."Data.Ordering".LT then x else __fail;
+                      __pattern1 = __fail: y;
+                      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 455:27 - 455:57";
+                    in
+                      __pattern0 (__pattern1 __patternFail)
+                  )
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 454:3 - 454:27";
+        in
+          __pattern0 (__pattern1 __patternFail);
+    in
+      foldl dictFoldable min' module."LocalDependency.Data.Maybe".Nothing;
+  minimum = dictOrd: dictFoldable: minimumBy dictFoldable (module."Data.Ord".compare dictOrd);
+  product = dictFoldable: dictSemiring: foldl dictFoldable (module."Data.Semiring".mul dictSemiring) (module."Data.Semiring".one dictSemiring);
+  sum = dictFoldable: dictSemiring: foldl dictFoldable (module."Data.Semiring".add dictSemiring) (module."Data.Semiring".zero dictSemiring);
+  foldableTuple = 
+    { foldr = f: z: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple"
+              then 
+                let
+                  f1 = f;
+                  z1 = z;
+                  x = v.__field1;
+                in
+                  f1 x z1
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 189:1 - 192:30";
+        in
+          __pattern0 __patternFail;
+      foldl = f: z: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple"
+              then 
+                let
+                  f1 = f;
+                  z1 = z;
+                  x = v.__field1;
+                in
+                  f1 z1 x
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 189:1 - 192:30";
+        in
+          __pattern0 __patternFail;
+      foldMap = dictMonoid: f: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple"
+              then 
+                let
+                  f1 = f;
+                  x = v.__field1;
+                in
+                  f1 x
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 189:1 - 192:30";
+        in
+          __pattern0 __patternFail;
+    };
+  foldableMultiplicative = 
+    { foldr = f: z: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              z1 = z;
+              x = v;
+            in
+              f1 x z1;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 176:1 - 179:37";
+        in
+          __pattern0 __patternFail;
+      foldl = f: z: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              z1 = z;
+              x = v;
+            in
+              f1 z1 x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 176:1 - 179:37";
+        in
+          __pattern0 __patternFail;
+      foldMap = dictMonoid: f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              x = v;
+            in
+              f1 x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 176:1 - 179:37";
+        in
+          __pattern0 __patternFail;
+    };
+  foldableMaybe = 
+    { foldr = v: z: v1: 
+        let
+          __pattern0 = __fail: 
+            if v1.__tag == "Nothing"
+              then 
+                let
+                  z1 = z;
+                in
+                  z1
+              else __fail;
+          __pattern1 = __fail: 
+            if v1.__tag == "Just"
+              then 
+                let
+                  f = v;
+                  z1 = z;
+                  x = v1.__field0;
+                in
+                  f x z1
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 138:1 - 144:27";
+        in
+          __pattern0 (__pattern1 __patternFail);
+      foldl = v: z: v1: 
+        let
+          __pattern0 = __fail: 
+            if v1.__tag == "Nothing"
+              then 
+                let
+                  z1 = z;
+                in
+                  z1
+              else __fail;
+          __pattern1 = __fail: 
+            if v1.__tag == "Just"
+              then 
+                let
+                  f = v;
+                  z1 = z;
+                  x = v1.__field0;
+                in
+                  f z1 x
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 138:1 - 144:27";
+        in
+          __pattern0 (__pattern1 __patternFail);
+      foldMap = dictMonoid: v: v1: 
+        let
+          __pattern0 = __fail: if v1.__tag == "Nothing" then module."Data.Monoid".mempty dictMonoid else __fail;
+          __pattern1 = __fail: 
+            if v1.__tag == "Just"
+              then 
+                let
+                  f = v;
+                  x = v1.__field0;
+                in
+                  f x
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 138:1 - 144:27";
+        in
+          __pattern0 (__pattern1 __patternFail);
+    };
+  foldableIdentity = 
+    { foldr = f: z: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              z1 = z;
+              x = v;
+            in
+              f1 x z1;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 194:1 - 197:31";
+        in
+          __pattern0 __patternFail;
+      foldl = f: z: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              z1 = z;
+              x = v;
+            in
+              f1 z1 x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 194:1 - 197:31";
+        in
+          __pattern0 __patternFail;
+      foldMap = dictMonoid: f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              x = v;
+            in
+              f1 x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 194:1 - 197:31";
+        in
+          __pattern0 __patternFail;
+    };
+  foldableEither = 
+    { foldr = v: z: v1: 
+        let
+          __pattern0 = __fail: 
+            if v1.__tag == "Left"
+              then 
+                let
+                  z1 = z;
+                in
+                  z1
+              else __fail;
+          __pattern1 = __fail: 
+            if v1.__tag == "Right"
+              then 
+                let
+                  f = v;
+                  z1 = z;
+                  x = v1.__field0;
+                in
+                  f x z1
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 181:1 - 187:28";
+        in
+          __pattern0 (__pattern1 __patternFail);
+      foldl = v: z: v1: 
+        let
+          __pattern0 = __fail: 
+            if v1.__tag == "Left"
+              then 
+                let
+                  z1 = z;
+                in
+                  z1
+              else __fail;
+          __pattern1 = __fail: 
+            if v1.__tag == "Right"
+              then 
+                let
+                  f = v;
+                  z1 = z;
+                  x = v1.__field0;
+                in
+                  f z1 x
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 181:1 - 187:28";
+        in
+          __pattern0 (__pattern1 __patternFail);
+      foldMap = dictMonoid: v: v1: 
+        let
+          __pattern0 = __fail: if v1.__tag == "Left" then module."Data.Monoid".mempty dictMonoid else __fail;
+          __pattern1 = __fail: 
+            if v1.__tag == "Right"
+              then 
+                let
+                  f = v;
+                  x = v1.__field0;
+                in
+                  f x
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 181:1 - 187:28";
+        in
+          __pattern0 (__pattern1 __patternFail);
+    };
+  foldableDual = 
+    { foldr = f: z: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              z1 = z;
+              x = v;
+            in
+              f1 x z1;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 161:1 - 164:27";
+        in
+          __pattern0 __patternFail;
+      foldl = f: z: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              z1 = z;
+              x = v;
+            in
+              f1 z1 x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 161:1 - 164:27";
+        in
+          __pattern0 __patternFail;
+      foldMap = dictMonoid: f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              x = v;
+            in
+              f1 x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 161:1 - 164:27";
+        in
+          __pattern0 __patternFail;
+    };
+  foldableDisj = 
+    { foldr = f: z: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              z1 = z;
+              x = v;
+            in
+              f1 x z1;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 166:1 - 169:27";
+        in
+          __pattern0 __patternFail;
+      foldl = f: z: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              z1 = z;
+              x = v;
+            in
+              f1 z1 x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 166:1 - 169:27";
+        in
+          __pattern0 __patternFail;
+      foldMap = dictMonoid: f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              x = v;
+            in
+              f1 x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 166:1 - 169:27";
+        in
+          __pattern0 __patternFail;
+    };
+  foldableConst = 
+    { foldr = v: z: v1: z;
+      foldl = v: z: v1: z;
+      foldMap = dictMonoid: v: v1: module."Data.Monoid".mempty dictMonoid;
+    };
+  foldableConj = 
+    { foldr = f: z: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              z1 = z;
+              x = v;
+            in
+              f1 x z1;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 171:1 - 174:27";
+        in
+          __pattern0 __patternFail;
+      foldl = f: z: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              z1 = z;
+              x = v;
+            in
+              f1 z1 x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 171:1 - 174:27";
+        in
+          __pattern0 __patternFail;
+      foldMap = dictMonoid: f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              x = v;
+            in
+              f1 x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 171:1 - 174:27";
+        in
+          __pattern0 __patternFail;
+    };
+  foldableAdditive = 
+    { foldr = f: z: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              z1 = z;
+              x = v;
+            in
+              f1 x z1;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 156:1 - 159:31";
+        in
+          __pattern0 __patternFail;
+      foldl = f: z: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              z1 = z;
+              x = v;
+            in
+              f1 z1 x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 156:1 - 159:31";
+        in
+          __pattern0 __patternFail;
+      foldMap = dictMonoid: f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              x = v;
+            in
+              f1 x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 156:1 - 159:31";
+        in
+          __pattern0 __patternFail;
+    };
+  foldMapDefaultR = dictFoldable: dictMonoid: f: foldr dictFoldable (x: acc: module."Data.Semigroup".append (dictMonoid."Semigroup0" module."Prim".undefined) (f x) acc) (module."Data.Monoid".mempty dictMonoid);
+  foldableArray = 
+    { foldr = foldrArray;
+      foldl = foldlArray;
+      foldMap = dictMonoid: foldMapDefaultR foldableArray dictMonoid;
+    };
+  foldMapDefaultL = dictFoldable: dictMonoid: f: foldl dictFoldable (acc: x: module."Data.Semigroup".append (dictMonoid."Semigroup0" module."Prim".undefined) acc (f x)) (module."Data.Monoid".mempty dictMonoid);
+  foldMap = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.foldMap;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 76:3 - 76:58";
+    in
+      __pattern0 __patternFail;
+  foldableApp = dictFoldable: 
+    { foldr = f: i: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              i1 = i;
+              x = v;
+            in
+              foldr dictFoldable f1 i1 x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 219:1 - 222:34";
+        in
+          __pattern0 __patternFail;
+      foldl = f: i: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              i1 = i;
+              x = v;
+            in
+              foldl dictFoldable f1 i1 x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 219:1 - 222:34";
+        in
+          __pattern0 __patternFail;
+      foldMap = dictMonoid: f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              x = v;
+            in
+              foldMap dictFoldable dictMonoid f1 x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 219:1 - 222:34";
+        in
+          __pattern0 __patternFail;
+    };
+  foldableCompose = dictFoldable: dictFoldable1: 
+    { foldr = f: i: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              i1 = i;
+              fga = v;
+            in
+              foldr dictFoldable (module."Data.Function".flip (foldr dictFoldable1 f1)) i1 fga;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 214:1 - 217:52";
+        in
+          __pattern0 __patternFail;
+      foldl = f: i: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              i1 = i;
+              fga = v;
+            in
+              foldl dictFoldable (foldl dictFoldable1 f1) i1 fga;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 214:1 - 217:52";
+        in
+          __pattern0 __patternFail;
+      foldMap = dictMonoid: f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              fga = v;
+            in
+              foldMap dictFoldable dictMonoid (foldMap dictFoldable1 dictMonoid f1) fga;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 214:1 - 217:52";
+        in
+          __pattern0 __patternFail;
+    };
+  foldableCoproduct = dictFoldable: dictFoldable1: 
+    { foldr = f: z: module."LocalDependency.Data.Functor.Coproduct".coproduct (foldr dictFoldable f z) (foldr dictFoldable1 f z);
+      foldl = f: z: module."LocalDependency.Data.Functor.Coproduct".coproduct (foldl dictFoldable f z) (foldl dictFoldable1 f z);
+      foldMap = dictMonoid: f: module."LocalDependency.Data.Functor.Coproduct".coproduct (foldMap dictFoldable dictMonoid f) (foldMap dictFoldable1 dictMonoid f);
+    };
+  foldableFirst = 
+    { foldr = f: z: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              z1 = z;
+              x = v;
+            in
+              foldr foldableMaybe f1 z1 x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 146:1 - 149:36";
+        in
+          __pattern0 __patternFail;
+      foldl = f: z: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              z1 = z;
+              x = v;
+            in
+              foldl foldableMaybe f1 z1 x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 146:1 - 149:36";
+        in
+          __pattern0 __patternFail;
+      foldMap = dictMonoid: f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              x = v;
+            in
+              foldMap foldableMaybe dictMonoid f1 x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 146:1 - 149:36";
+        in
+          __pattern0 __patternFail;
+    };
+  foldableLast = 
+    { foldr = f: z: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              z1 = z;
+              x = v;
+            in
+              foldr foldableMaybe f1 z1 x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 151:1 - 154:35";
+        in
+          __pattern0 __patternFail;
+      foldl = f: z: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              z1 = z;
+              x = v;
+            in
+              foldl foldableMaybe f1 z1 x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 151:1 - 154:35";
+        in
+          __pattern0 __patternFail;
+      foldMap = dictMonoid: f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              x = v;
+            in
+              foldMap foldableMaybe dictMonoid f1 x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 151:1 - 154:35";
+        in
+          __pattern0 __patternFail;
+    };
+  foldableProduct = dictFoldable: dictFoldable1: 
+    { foldr = f: z: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple"
+              then 
+                let
+                  f1 = f;
+                  z1 = z;
+                  fa = v.__field0;
+                  ga = v.__field1;
+                in
+                  foldr dictFoldable f1 (foldr dictFoldable1 f1 z1 ga) fa
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 204:1 - 207:67";
+        in
+          __pattern0 __patternFail;
+      foldl = f: z: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple"
+              then 
+                let
+                  f1 = f;
+                  z1 = z;
+                  fa = v.__field0;
+                  ga = v.__field1;
+                in
+                  foldl dictFoldable1 f1 (foldl dictFoldable f1 z1 fa) ga
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 204:1 - 207:67";
+        in
+          __pattern0 __patternFail;
+      foldMap = dictMonoid: f: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple"
+              then 
+                let
+                  f1 = f;
+                  fa = v.__field0;
+                  ga = v.__field1;
+                in
+                  module."Data.Semigroup".append (dictMonoid."Semigroup0" module."Prim".undefined) (foldMap dictFoldable dictMonoid f1 fa) (foldMap dictFoldable1 dictMonoid f1 ga)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 204:1 - 207:67";
+        in
+          __pattern0 __patternFail;
+    };
+  foldlDefault = dictFoldable: c: u: xs: module."Data.Newtype".unwrap module."Prim".undefined (module."Data.Newtype".unwrap module."Prim".undefined (foldMap dictFoldable (module."Data.Monoid.Dual".monoidDual (module."Data.Monoid.Endo".monoidEndo module."Control.Category".categoryFn)) (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."Data.Monoid.Dual".Dual (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."Data.Monoid.Endo".Endo (module."Data.Function".flip c))) xs)) u;
+  foldrDefault = dictFoldable: c: u: xs: module."Data.Newtype".unwrap module."Prim".undefined (foldMap dictFoldable (module."Data.Monoid.Endo".monoidEndo module."Control.Category".categoryFn) (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."Data.Monoid.Endo".Endo c) xs) u;
+  lookup = dictFoldable: dictEq: a: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Data.Newtype".unwrap module."Prim".undefined) 
+    ( foldMap dictFoldable module."LocalDependency.Data.Maybe.First".monoidFirst 
+      ( v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple"
+              then 
+                let
+                  a' = v.__field0;
+                  b = v.__field1;
+                in
+                  
+                  let
+                    __pattern0 = __fail: if module."Data.Eq".eq dictEq a a' then module."LocalDependency.Data.Maybe".Just b else __fail;
+                    __pattern1 = __fail: module."LocalDependency.Data.Maybe".Nothing;
+                    __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 471:55 - 471:90";
+                  in
+                    __pattern0 (__pattern1 __patternFail)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 471:31 - 471:91";
+        in
+          __pattern0 __patternFail
+      )
+    );
+  surroundMap = dictFoldable: dictSemigroup: d: t: f: 
+    let
+      joined = a: m: module."Data.Semigroup".append dictSemigroup d (module."Data.Semigroup".append dictSemigroup (t a) m);
+    in
+      module."Data.Newtype".unwrap module."Prim".undefined (foldMap dictFoldable (module."Data.Monoid.Endo".monoidEndo module."Control.Category".categoryFn) joined f) d;
+  surround = dictFoldable: dictSemigroup: d: surroundMap dictFoldable dictSemigroup d (module."Control.Category".identity module."Control.Category".categoryFn);
+  foldM = dictFoldable: dictMonad: f: b0: foldl dictFoldable (b: a: module."Control.Bind".bind (dictMonad."Bind1" module."Prim".undefined) b (module."Data.Function".flip f a)) (module."Control.Applicative".pure (dictMonad."Applicative0" module."Prim".undefined) b0);
+  fold = dictFoldable: dictMonoid: foldMap dictFoldable dictMonoid (module."Control.Category".identity module."Control.Category".categoryFn);
+  findMap = dictFoldable: p: 
+    let
+      go = v: v1: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Nothing"
+              then 
+                let
+                  x = v1;
+                in
+                  p x
+              else __fail;
+          __pattern1 = __fail: 
+            let
+              r = v;
+            in
+              r;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 428:3 - 428:21";
+        in
+          __pattern0 (__pattern1 __patternFail);
+    in
+      foldl dictFoldable go module."LocalDependency.Data.Maybe".Nothing;
+  find = dictFoldable: p: 
+    let
+      go = v: v1: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Nothing"
+              then 
+                let
+                  x = v1;
+                in
+                  if p x then module."LocalDependency.Data.Maybe".Just x else __fail
+              else __fail;
+          __pattern1 = __fail: 
+            let
+              r = v;
+            in
+              r;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Foldable.purs at 421:3 - 421:30";
+        in
+          __pattern0 (__pattern1 __patternFail);
+    in
+      foldl dictFoldable go module."LocalDependency.Data.Maybe".Nothing;
+  any = dictFoldable: dictHeytingAlgebra: module."Data.Newtype".alaF module."Prim".undefined module."Prim".undefined module."Prim".undefined module."Prim".undefined module."Data.Monoid.Disj".Disj (foldMap dictFoldable (module."Data.Monoid.Disj".monoidDisj dictHeytingAlgebra));
+  elem = dictFoldable: dictEq: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (any dictFoldable module."Data.HeytingAlgebra".heytingAlgebraBoolean) (module."Data.Eq".eq dictEq);
+  notElem = dictFoldable: dictEq: x: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Data.HeytingAlgebra".not module."Data.HeytingAlgebra".heytingAlgebraBoolean) (elem dictFoldable dictEq x);
+  or- = dictFoldable: dictHeytingAlgebra: any dictFoldable dictHeytingAlgebra (module."Control.Category".identity module."Control.Category".categoryFn);
+  all = dictFoldable: dictHeytingAlgebra: module."Data.Newtype".alaF module."Prim".undefined module."Prim".undefined module."Prim".undefined module."Prim".undefined module."Data.Monoid.Conj".Conj (foldMap dictFoldable (module."Data.Monoid.Conj".monoidConj dictHeytingAlgebra));
+  and = dictFoldable: dictHeytingAlgebra: all dictFoldable dictHeytingAlgebra (module."Control.Category".identity module."Control.Category".categoryFn);
+in
+  {inherit foldr foldl foldMap foldrDefault foldlDefault foldMapDefaultL foldMapDefaultR fold foldM traverse_ for_ sequence_ oneOf oneOfMap intercalate surroundMap surround and or- all any sum product elem notElem indexl indexr find findMap maximum maximumBy minimum minimumBy null length lookup foldableArray foldableMaybe foldableFirst foldableLast foldableAdditive foldableDual foldableDisj foldableConj foldableMultiplicative foldableEither foldableTuple foldableIdentity foldableConst foldableProduct foldableCoproduct foldableCompose foldableApp;}
+;
+
+LocalDependency-Data-Foldable_foreign-nix = 
+{ # This is foldr from nixpkgs/lib/lists.nix
+  foldrArray = op: nul: list:
+    let
+      len = builtins.length list;
+      fold' = n:
+        if n == len
+        then nul
+        else op (builtins.elemAt list n) (fold' (n + 1));
+    in fold' 0;
+
+  foldlArray = builtins.foldl';
+}
+
+;
+
+LocalDependency-Data-FoldableWithIndex_default-nix = 
+let
+  module = 
+    { "Control.Applicative" = Control-Applicative_default-nix;
+      "Control.Apply" = Control-Apply_default-nix;
+      "Control.Bind" = Control-Bind_default-nix;
+      "Control.Category" = Control-Category_default-nix;
+      "Control.Semigroupoid" = Control-Semigroupoid_default-nix;
+      "Data.Function" = Data-Function_default-nix;
+      "Data.Monoid" = Data-Monoid_default-nix;
+      "Data.Monoid.Additive" = Data-Monoid-Additive_default-nix;
+      "Data.Monoid.Conj" = Data-Monoid-Conj_default-nix;
+      "Data.Monoid.Disj" = Data-Monoid-Disj_default-nix;
+      "Data.Monoid.Dual" = Data-Monoid-Dual_default-nix;
+      "Data.Monoid.Endo" = Data-Monoid-Endo_default-nix;
+      "Data.Monoid.Multiplicative" = Data-Monoid-Multiplicative_default-nix;
+      "Data.Newtype" = Data-Newtype_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+      "Data.Unit" = Data-Unit_default-nix;
+      "LocalDependency.Data.Const" = LocalDependency-Data-Const_default-nix;
+      "LocalDependency.Data.Either" = LocalDependency-Data-Either_default-nix;
+      "LocalDependency.Data.Foldable" = LocalDependency-Data-Foldable_default-nix;
+      "LocalDependency.Data.Functor.App" = LocalDependency-Data-Functor-App_default-nix;
+      "LocalDependency.Data.Functor.Compose" = LocalDependency-Data-Functor-Compose_default-nix;
+      "LocalDependency.Data.Functor.Coproduct" = LocalDependency-Data-Functor-Coproduct_default-nix;
+      "LocalDependency.Data.Functor.Product" = LocalDependency-Data-Functor-Product_default-nix;
+      "LocalDependency.Data.FunctorWithIndex" = LocalDependency-Data-FunctorWithIndex_default-nix;
+      "LocalDependency.Data.Identity" = LocalDependency-Data-Identity_default-nix;
+      "LocalDependency.Data.Maybe" = LocalDependency-Data-Maybe_default-nix;
+      "LocalDependency.Data.Maybe.First" = LocalDependency-Data-Maybe-First_default-nix;
+      "LocalDependency.Data.Maybe.Last" = LocalDependency-Data-Maybe-Last_default-nix;
+      "LocalDependency.Data.Tuple" = LocalDependency-Data-Tuple_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  FoldableWithIndex-Dict = x: x;
+  foldrWithIndex = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.foldrWithIndex;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/FoldableWithIndex.purs at 63:3 - 63:68";
+    in
+      __pattern0 __patternFail;
+  traverseWithIndex_ = dictApplicative: dictFoldableWithIndex: f: foldrWithIndex dictFoldableWithIndex (i: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Control.Apply".applySecond (dictApplicative."Apply0" module."Prim".undefined)) (f i)) (module."Control.Applicative".pure dictApplicative module."Data.Unit".unit);
+  forWithIndex_ = dictApplicative: dictFoldableWithIndex: module."Data.Function".flip (traverseWithIndex_ dictApplicative dictFoldableWithIndex);
+  foldrDefault = dictFoldableWithIndex: f: foldrWithIndex dictFoldableWithIndex (module."Data.Function".const f);
+  foldlWithIndex = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.foldlWithIndex;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/FoldableWithIndex.purs at 64:3 - 64:68";
+    in
+      __pattern0 __patternFail;
+  foldlDefault = dictFoldableWithIndex: f: foldlWithIndex dictFoldableWithIndex (module."Data.Function".const f);
+  foldableWithIndexTuple = 
+    { foldrWithIndex = f: z: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple"
+              then 
+                let
+                  f1 = f;
+                  z1 = z;
+                  x = v.__field1;
+                in
+                  f1 module."Data.Unit".unit x z1
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/FoldableWithIndex.purs at 172:1 - 175:44";
+        in
+          __pattern0 __patternFail;
+      foldlWithIndex = f: z: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple"
+              then 
+                let
+                  f1 = f;
+                  z1 = z;
+                  x = v.__field1;
+                in
+                  f1 module."Data.Unit".unit z1 x
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/FoldableWithIndex.purs at 172:1 - 175:44";
+        in
+          __pattern0 __patternFail;
+      foldMapWithIndex = dictMonoid: f: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple"
+              then 
+                let
+                  f1 = f;
+                  x = v.__field1;
+                in
+                  f1 module."Data.Unit".unit x
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/FoldableWithIndex.purs at 172:1 - 175:44";
+        in
+          __pattern0 __patternFail;
+      "Foldable0" = __unused: module."LocalDependency.Data.Foldable".foldableTuple;
+    };
+  foldableWithIndexMultiplicative = 
+    { foldrWithIndex = f: module."Data.Function".apply (module."LocalDependency.Data.Foldable".foldr module."LocalDependency.Data.Foldable".foldableMultiplicative) (f module."Data.Unit".unit);
+      foldlWithIndex = f: module."Data.Function".apply (module."LocalDependency.Data.Foldable".foldl module."LocalDependency.Data.Foldable".foldableMultiplicative) (f module."Data.Unit".unit);
+      foldMapWithIndex = dictMonoid: f: module."Data.Function".apply (module."LocalDependency.Data.Foldable".foldMap module."LocalDependency.Data.Foldable".foldableMultiplicative dictMonoid) (f module."Data.Unit".unit);
+      "Foldable0" = __unused: module."LocalDependency.Data.Foldable".foldableMultiplicative;
+    };
+  foldableWithIndexMaybe = 
+    { foldrWithIndex = f: module."Data.Function".apply (module."LocalDependency.Data.Foldable".foldr module."LocalDependency.Data.Foldable".foldableMaybe) (f module."Data.Unit".unit);
+      foldlWithIndex = f: module."Data.Function".apply (module."LocalDependency.Data.Foldable".foldl module."LocalDependency.Data.Foldable".foldableMaybe) (f module."Data.Unit".unit);
+      foldMapWithIndex = dictMonoid: f: module."Data.Function".apply (module."LocalDependency.Data.Foldable".foldMap module."LocalDependency.Data.Foldable".foldableMaybe dictMonoid) (f module."Data.Unit".unit);
+      "Foldable0" = __unused: module."LocalDependency.Data.Foldable".foldableMaybe;
+    };
+  foldableWithIndexLast = 
+    { foldrWithIndex = f: module."Data.Function".apply (module."LocalDependency.Data.Foldable".foldr module."LocalDependency.Data.Foldable".foldableLast) (f module."Data.Unit".unit);
+      foldlWithIndex = f: module."Data.Function".apply (module."LocalDependency.Data.Foldable".foldl module."LocalDependency.Data.Foldable".foldableLast) (f module."Data.Unit".unit);
+      foldMapWithIndex = dictMonoid: f: module."Data.Function".apply (module."LocalDependency.Data.Foldable".foldMap module."LocalDependency.Data.Foldable".foldableLast dictMonoid) (f module."Data.Unit".unit);
+      "Foldable0" = __unused: module."LocalDependency.Data.Foldable".foldableLast;
+    };
+  foldableWithIndexIdentity = 
+    { foldrWithIndex = f: z: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              z1 = z;
+              x = v;
+            in
+              f1 module."Data.Unit".unit x z1;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/FoldableWithIndex.purs at 177:1 - 180:45";
+        in
+          __pattern0 __patternFail;
+      foldlWithIndex = f: z: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              z1 = z;
+              x = v;
+            in
+              f1 module."Data.Unit".unit z1 x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/FoldableWithIndex.purs at 177:1 - 180:45";
+        in
+          __pattern0 __patternFail;
+      foldMapWithIndex = dictMonoid: f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              x = v;
+            in
+              f1 module."Data.Unit".unit x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/FoldableWithIndex.purs at 177:1 - 180:45";
+        in
+          __pattern0 __patternFail;
+      "Foldable0" = __unused: module."LocalDependency.Data.Foldable".foldableIdentity;
+    };
+  foldableWithIndexFirst = 
+    { foldrWithIndex = f: module."Data.Function".apply (module."LocalDependency.Data.Foldable".foldr module."LocalDependency.Data.Foldable".foldableFirst) (f module."Data.Unit".unit);
+      foldlWithIndex = f: module."Data.Function".apply (module."LocalDependency.Data.Foldable".foldl module."LocalDependency.Data.Foldable".foldableFirst) (f module."Data.Unit".unit);
+      foldMapWithIndex = dictMonoid: f: module."Data.Function".apply (module."LocalDependency.Data.Foldable".foldMap module."LocalDependency.Data.Foldable".foldableFirst dictMonoid) (f module."Data.Unit".unit);
+      "Foldable0" = __unused: module."LocalDependency.Data.Foldable".foldableFirst;
+    };
+  foldableWithIndexEither = 
+    { foldrWithIndex = v: z: v1: 
+        let
+          __pattern0 = __fail: 
+            if v1.__tag == "Left"
+              then 
+                let
+                  z1 = z;
+                in
+                  z1
+              else __fail;
+          __pattern1 = __fail: 
+            if v1.__tag == "Right"
+              then 
+                let
+                  f = v;
+                  z1 = z;
+                  x = v1.__field0;
+                in
+                  f module."Data.Unit".unit x z1
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/FoldableWithIndex.purs at 164:1 - 170:42";
+        in
+          __pattern0 (__pattern1 __patternFail);
+      foldlWithIndex = v: z: v1: 
+        let
+          __pattern0 = __fail: 
+            if v1.__tag == "Left"
+              then 
+                let
+                  z1 = z;
+                in
+                  z1
+              else __fail;
+          __pattern1 = __fail: 
+            if v1.__tag == "Right"
+              then 
+                let
+                  f = v;
+                  z1 = z;
+                  x = v1.__field0;
+                in
+                  f module."Data.Unit".unit z1 x
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/FoldableWithIndex.purs at 164:1 - 170:42";
+        in
+          __pattern0 (__pattern1 __patternFail);
+      foldMapWithIndex = dictMonoid: v: v1: 
+        let
+          __pattern0 = __fail: if v1.__tag == "Left" then module."Data.Monoid".mempty dictMonoid else __fail;
+          __pattern1 = __fail: 
+            if v1.__tag == "Right"
+              then 
+                let
+                  f = v;
+                  x = v1.__field0;
+                in
+                  f module."Data.Unit".unit x
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/FoldableWithIndex.purs at 164:1 - 170:42";
+        in
+          __pattern0 (__pattern1 __patternFail);
+      "Foldable0" = __unused: module."LocalDependency.Data.Foldable".foldableEither;
+    };
+  foldableWithIndexDual = 
+    { foldrWithIndex = f: module."Data.Function".apply (module."LocalDependency.Data.Foldable".foldr module."LocalDependency.Data.Foldable".foldableDual) (f module."Data.Unit".unit);
+      foldlWithIndex = f: module."Data.Function".apply (module."LocalDependency.Data.Foldable".foldl module."LocalDependency.Data.Foldable".foldableDual) (f module."Data.Unit".unit);
+      foldMapWithIndex = dictMonoid: f: module."Data.Function".apply (module."LocalDependency.Data.Foldable".foldMap module."LocalDependency.Data.Foldable".foldableDual dictMonoid) (f module."Data.Unit".unit);
+      "Foldable0" = __unused: module."LocalDependency.Data.Foldable".foldableDual;
+    };
+  foldableWithIndexDisj = 
+    { foldrWithIndex = f: module."Data.Function".apply (module."LocalDependency.Data.Foldable".foldr module."LocalDependency.Data.Foldable".foldableDisj) (f module."Data.Unit".unit);
+      foldlWithIndex = f: module."Data.Function".apply (module."LocalDependency.Data.Foldable".foldl module."LocalDependency.Data.Foldable".foldableDisj) (f module."Data.Unit".unit);
+      foldMapWithIndex = dictMonoid: f: module."Data.Function".apply (module."LocalDependency.Data.Foldable".foldMap module."LocalDependency.Data.Foldable".foldableDisj dictMonoid) (f module."Data.Unit".unit);
+      "Foldable0" = __unused: module."LocalDependency.Data.Foldable".foldableDisj;
+    };
+  foldableWithIndexConst = 
+    { foldrWithIndex = v: z: v1: z;
+      foldlWithIndex = v: z: v1: z;
+      foldMapWithIndex = dictMonoid: v: v1: module."Data.Monoid".mempty dictMonoid;
+      "Foldable0" = __unused: module."LocalDependency.Data.Foldable".foldableConst;
+    };
+  foldableWithIndexConj = 
+    { foldrWithIndex = f: module."Data.Function".apply (module."LocalDependency.Data.Foldable".foldr module."LocalDependency.Data.Foldable".foldableConj) (f module."Data.Unit".unit);
+      foldlWithIndex = f: module."Data.Function".apply (module."LocalDependency.Data.Foldable".foldl module."LocalDependency.Data.Foldable".foldableConj) (f module."Data.Unit".unit);
+      foldMapWithIndex = dictMonoid: f: module."Data.Function".apply (module."LocalDependency.Data.Foldable".foldMap module."LocalDependency.Data.Foldable".foldableConj dictMonoid) (f module."Data.Unit".unit);
+      "Foldable0" = __unused: module."LocalDependency.Data.Foldable".foldableConj;
+    };
+  foldableWithIndexAdditive = 
+    { foldrWithIndex = f: module."Data.Function".apply (module."LocalDependency.Data.Foldable".foldr module."LocalDependency.Data.Foldable".foldableAdditive) (f module."Data.Unit".unit);
+      foldlWithIndex = f: module."Data.Function".apply (module."LocalDependency.Data.Foldable".foldl module."LocalDependency.Data.Foldable".foldableAdditive) (f module."Data.Unit".unit);
+      foldMapWithIndex = dictMonoid: f: module."Data.Function".apply (module."LocalDependency.Data.Foldable".foldMap module."LocalDependency.Data.Foldable".foldableAdditive dictMonoid) (f module."Data.Unit".unit);
+      "Foldable0" = __unused: module."LocalDependency.Data.Foldable".foldableAdditive;
+    };
+  foldWithIndexM = dictFoldableWithIndex: dictMonad: f: a0: foldlWithIndex dictFoldableWithIndex (i: ma: b: module."Control.Bind".bind (dictMonad."Bind1" module."Prim".undefined) ma (module."Data.Function".flip (f i) b)) (module."Control.Applicative".pure (dictMonad."Applicative0" module."Prim".undefined) a0);
+  foldMapWithIndexDefaultR = dictFoldableWithIndex: dictMonoid: f: foldrWithIndex dictFoldableWithIndex (i: x: acc: module."Data.Semigroup".append (dictMonoid."Semigroup0" module."Prim".undefined) (f i x) acc) (module."Data.Monoid".mempty dictMonoid);
+  foldableWithIndexArray = 
+    { foldrWithIndex = f: z: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn 
+        ( module."LocalDependency.Data.Foldable".foldr module."LocalDependency.Data.Foldable".foldableArray 
+          ( v: 
+            let
+              __pattern0 = __fail: 
+                if v.__tag == "Tuple"
+                  then 
+                    let
+                      i = v.__field0;
+                      x = v.__field1;
+                    in
+                      y: f i x y
+                  else __fail;
+              __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/FoldableWithIndex.purs at 120:31 - 120:56";
+            in
+              __pattern0 __patternFail
+          ) z
+        ) (module."LocalDependency.Data.FunctorWithIndex".mapWithIndex module."LocalDependency.Data.FunctorWithIndex".functorWithIndexArray module."LocalDependency.Data.Tuple".Tuple);
+      foldlWithIndex = f: z: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn 
+        ( module."LocalDependency.Data.Foldable".foldl module."LocalDependency.Data.Foldable".foldableArray 
+          ( y: v: 
+            let
+              __pattern0 = __fail: 
+                if v.__tag == "Tuple"
+                  then 
+                    let
+                      i = v.__field0;
+                      x = v.__field1;
+                    in
+                      f i y x
+                  else __fail;
+              __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/FoldableWithIndex.purs at 121:31 - 121:56";
+            in
+              __pattern0 __patternFail
+          ) z
+        ) (module."LocalDependency.Data.FunctorWithIndex".mapWithIndex module."LocalDependency.Data.FunctorWithIndex".functorWithIndexArray module."LocalDependency.Data.Tuple".Tuple);
+      foldMapWithIndex = dictMonoid: foldMapWithIndexDefaultR foldableWithIndexArray dictMonoid;
+      "Foldable0" = __unused: module."LocalDependency.Data.Foldable".foldableArray;
+    };
+  foldMapWithIndexDefaultL = dictFoldableWithIndex: dictMonoid: f: foldlWithIndex dictFoldableWithIndex (i: acc: x: module."Data.Semigroup".append (dictMonoid."Semigroup0" module."Prim".undefined) acc (f i x)) (module."Data.Monoid".mempty dictMonoid);
+  foldMapWithIndex = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.foldMapWithIndex;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/FoldableWithIndex.purs at 65:3 - 65:72";
+    in
+      __pattern0 __patternFail;
+  foldableWithIndexApp = dictFoldableWithIndex: 
+    { foldrWithIndex = f: z: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              z1 = z;
+              x = v;
+            in
+              foldrWithIndex dictFoldableWithIndex f1 z1 x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/FoldableWithIndex.purs at 202:1 - 205:52";
+        in
+          __pattern0 __patternFail;
+      foldlWithIndex = f: z: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              z1 = z;
+              x = v;
+            in
+              foldlWithIndex dictFoldableWithIndex f1 z1 x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/FoldableWithIndex.purs at 202:1 - 205:52";
+        in
+          __pattern0 __patternFail;
+      foldMapWithIndex = dictMonoid: f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              x = v;
+            in
+              foldMapWithIndex dictFoldableWithIndex dictMonoid f1 x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/FoldableWithIndex.purs at 202:1 - 205:52";
+        in
+          __pattern0 __patternFail;
+      "Foldable0" = __unused: module."LocalDependency.Data.Foldable".foldableApp (dictFoldableWithIndex."Foldable0" module."Prim".undefined);
+    };
+  foldableWithIndexCompose = dictFoldableWithIndex: dictFoldableWithIndex1: 
+    { foldrWithIndex = f: i: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              i1 = i;
+              fga = v;
+            in
+              foldrWithIndex dictFoldableWithIndex (a: module."Data.Function".flip (foldrWithIndex dictFoldableWithIndex1 (module."LocalDependency.Data.Tuple".curry f1 a))) i1 fga;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/FoldableWithIndex.purs at 197:1 - 200:89";
+        in
+          __pattern0 __patternFail;
+      foldlWithIndex = f: i: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              i1 = i;
+              fga = v;
+            in
+              foldlWithIndex dictFoldableWithIndex (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (foldlWithIndex dictFoldableWithIndex1) (module."LocalDependency.Data.Tuple".curry f1)) i1 fga;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/FoldableWithIndex.purs at 197:1 - 200:89";
+        in
+          __pattern0 __patternFail;
+      foldMapWithIndex = dictMonoid: f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              fga = v;
+            in
+              foldMapWithIndex dictFoldableWithIndex dictMonoid (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (foldMapWithIndex dictFoldableWithIndex1 dictMonoid) (module."LocalDependency.Data.Tuple".curry f1)) fga;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/FoldableWithIndex.purs at 197:1 - 200:89";
+        in
+          __pattern0 __patternFail;
+      "Foldable0" = __unused: module."LocalDependency.Data.Foldable".foldableCompose (dictFoldableWithIndex."Foldable0" module."Prim".undefined) (dictFoldableWithIndex1."Foldable0" module."Prim".undefined);
+    };
+  foldableWithIndexCoproduct = dictFoldableWithIndex: dictFoldableWithIndex1: 
+    { foldrWithIndex = f: z: module."LocalDependency.Data.Functor.Coproduct".coproduct (foldrWithIndex dictFoldableWithIndex (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn f module."LocalDependency.Data.Either".Left) z) (foldrWithIndex dictFoldableWithIndex1 (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn f module."LocalDependency.Data.Either".Right) z);
+      foldlWithIndex = f: z: module."LocalDependency.Data.Functor.Coproduct".coproduct (foldlWithIndex dictFoldableWithIndex (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn f module."LocalDependency.Data.Either".Left) z) (foldlWithIndex dictFoldableWithIndex1 (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn f module."LocalDependency.Data.Either".Right) z);
+      foldMapWithIndex = dictMonoid: f: module."LocalDependency.Data.Functor.Coproduct".coproduct (foldMapWithIndex dictFoldableWithIndex dictMonoid (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn f module."LocalDependency.Data.Either".Left)) (foldMapWithIndex dictFoldableWithIndex1 dictMonoid (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn f module."LocalDependency.Data.Either".Right));
+      "Foldable0" = __unused: module."LocalDependency.Data.Foldable".foldableCoproduct (dictFoldableWithIndex."Foldable0" module."Prim".undefined) (dictFoldableWithIndex1."Foldable0" module."Prim".undefined);
+    };
+  foldableWithIndexProduct = dictFoldableWithIndex: dictFoldableWithIndex1: 
+    { foldrWithIndex = f: z: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple"
+              then 
+                let
+                  f1 = f;
+                  z1 = z;
+                  fa = v.__field0;
+                  ga = v.__field1;
+                in
+                  foldrWithIndex dictFoldableWithIndex (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn f1 module."LocalDependency.Data.Either".Left) (foldrWithIndex dictFoldableWithIndex1 (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn f1 module."LocalDependency.Data.Either".Right) z1 ga) fa
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/FoldableWithIndex.purs at 187:1 - 190:117";
+        in
+          __pattern0 __patternFail;
+      foldlWithIndex = f: z: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple"
+              then 
+                let
+                  f1 = f;
+                  z1 = z;
+                  fa = v.__field0;
+                  ga = v.__field1;
+                in
+                  foldlWithIndex dictFoldableWithIndex1 (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn f1 module."LocalDependency.Data.Either".Right) (foldlWithIndex dictFoldableWithIndex (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn f1 module."LocalDependency.Data.Either".Left) z1 fa) ga
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/FoldableWithIndex.purs at 187:1 - 190:117";
+        in
+          __pattern0 __patternFail;
+      foldMapWithIndex = dictMonoid: f: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple"
+              then 
+                let
+                  f1 = f;
+                  fa = v.__field0;
+                  ga = v.__field1;
+                in
+                  module."Data.Semigroup".append (dictMonoid."Semigroup0" module."Prim".undefined) (foldMapWithIndex dictFoldableWithIndex dictMonoid (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn f1 module."LocalDependency.Data.Either".Left) fa) (foldMapWithIndex dictFoldableWithIndex1 dictMonoid (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn f1 module."LocalDependency.Data.Either".Right) ga)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/FoldableWithIndex.purs at 187:1 - 190:117";
+        in
+          __pattern0 __patternFail;
+      "Foldable0" = __unused: module."LocalDependency.Data.Foldable".foldableProduct (dictFoldableWithIndex."Foldable0" module."Prim".undefined) (dictFoldableWithIndex1."Foldable0" module."Prim".undefined);
+    };
+  foldlWithIndexDefault = dictFoldableWithIndex: c: u: xs: module."Data.Newtype".unwrap module."Prim".undefined (module."Data.Newtype".unwrap module."Prim".undefined (foldMapWithIndex dictFoldableWithIndex (module."Data.Monoid.Dual".monoidDual (module."Data.Monoid.Endo".monoidEndo module."Control.Category".categoryFn)) (i: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."Data.Monoid.Dual".Dual (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."Data.Monoid.Endo".Endo (module."Data.Function".flip (c i)))) xs)) u;
+  foldrWithIndexDefault = dictFoldableWithIndex: c: u: xs: module."Data.Newtype".unwrap module."Prim".undefined (foldMapWithIndex dictFoldableWithIndex (module."Data.Monoid.Endo".monoidEndo module."Control.Category".categoryFn) (i: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."Data.Monoid.Endo".Endo (c i)) xs) u;
+  surroundMapWithIndex = dictFoldableWithIndex: dictSemigroup: d: t: f: 
+    let
+      joined = i: a: m: module."Data.Semigroup".append dictSemigroup d (module."Data.Semigroup".append dictSemigroup (t i a) m);
+    in
+      module."Data.Newtype".unwrap module."Prim".undefined (foldMapWithIndex dictFoldableWithIndex (module."Data.Monoid.Endo".monoidEndo module."Control.Category".categoryFn) joined f) d;
+  foldMapDefault = dictFoldableWithIndex: dictMonoid: f: foldMapWithIndex dictFoldableWithIndex dictMonoid (module."Data.Function".const f);
+  findWithIndex = dictFoldableWithIndex: p: 
+    let
+      go = v: v1: v2: 
+        let
+          __pattern0 = __fail: 
+            if v1.__tag == "Nothing"
+              then 
+                let
+                  i = v;
+                  x = v2;
+                in
+                  
+                  if p i x
+                    then module."LocalDependency.Data.Maybe".Just 
+                      { index = i;
+                        value = x;
+                      }
+                    else __fail
+              else __fail;
+          __pattern1 = __fail: 
+            let
+              r = v1;
+            in
+              r;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/FoldableWithIndex.purs at 324:5 - 328:42";
+        in
+          __pattern0 (__pattern1 __patternFail);
+    in
+      foldlWithIndex dictFoldableWithIndex go module."LocalDependency.Data.Maybe".Nothing;
+  findMapWithIndex = dictFoldableWithIndex: f: 
+    let
+      go = v: v1: v2: 
+        let
+          __pattern0 = __fail: 
+            if v1.__tag == "Nothing"
+              then 
+                let
+                  i = v;
+                  x = v2;
+                in
+                  f i x
+              else __fail;
+          __pattern1 = __fail: 
+            let
+              r = v1;
+            in
+              r;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/FoldableWithIndex.purs at 342:5 - 346:17";
+        in
+          __pattern0 (__pattern1 __patternFail);
+    in
+      foldlWithIndex dictFoldableWithIndex go module."LocalDependency.Data.Maybe".Nothing;
+  anyWithIndex = dictFoldableWithIndex: dictHeytingAlgebra: t: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Data.Newtype".unwrap module."Prim".undefined) (foldMapWithIndex dictFoldableWithIndex (module."Data.Monoid.Disj".monoidDisj dictHeytingAlgebra) (i: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."Data.Monoid.Disj".Disj (t i)));
+  allWithIndex = dictFoldableWithIndex: dictHeytingAlgebra: t: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Data.Newtype".unwrap module."Prim".undefined) (foldMapWithIndex dictFoldableWithIndex (module."Data.Monoid.Conj".monoidConj dictHeytingAlgebra) (i: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."Data.Monoid.Conj".Conj (t i)));
+in
+  {inherit foldrWithIndex foldlWithIndex foldMapWithIndex foldrWithIndexDefault foldlWithIndexDefault foldMapWithIndexDefaultR foldMapWithIndexDefaultL foldWithIndexM traverseWithIndex_ forWithIndex_ surroundMapWithIndex allWithIndex anyWithIndex findWithIndex findMapWithIndex foldrDefault foldlDefault foldMapDefault foldableWithIndexArray foldableWithIndexMaybe foldableWithIndexFirst foldableWithIndexLast foldableWithIndexAdditive foldableWithIndexDual foldableWithIndexDisj foldableWithIndexConj foldableWithIndexMultiplicative foldableWithIndexEither foldableWithIndexTuple foldableWithIndexIdentity foldableWithIndexConst foldableWithIndexProduct foldableWithIndexCoproduct foldableWithIndexCompose foldableWithIndexApp;}
+;
+
+LocalDependency-Data-Functor-App_default-nix = 
+let
+  module = 
+    { "Control.Applicative" = Control-Applicative_default-nix;
+      "Control.Apply" = Control-Apply_default-nix;
+      "Control.Bind" = Control-Bind_default-nix;
+      "Control.Monad" = Control-Monad_default-nix;
+      "Data.Eq" = Data-Eq_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.Monoid" = Data-Monoid_default-nix;
+      "Data.Newtype" = Data-Newtype_default-nix;
+      "Data.Ord" = Data-Ord_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+      "Data.Show" = Data-Show_default-nix;
+      "LocalDependency.Control.Alt" = LocalDependency-Control-Alt_default-nix;
+      "LocalDependency.Control.Alternative" = LocalDependency-Control-Alternative_default-nix;
+      "LocalDependency.Control.Comonad" = LocalDependency-Control-Comonad_default-nix;
+      "LocalDependency.Control.Extend" = LocalDependency-Control-Extend_default-nix;
+      "LocalDependency.Control.Lazy" = LocalDependency-Control-Lazy_default-nix;
+      "LocalDependency.Control.MonadPlus" = LocalDependency-Control-MonadPlus_default-nix;
+      "LocalDependency.Control.MonadZero" = LocalDependency-Control-MonadZero_default-nix;
+      "LocalDependency.Control.Plus" = LocalDependency-Control-Plus_default-nix;
+      "LocalDependency.Unsafe.Coerce" = LocalDependency-Unsafe-Coerce_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  App = x: x;
+  showApp = dictShow: 
+    { show = v: 
+        let
+          __pattern0 = __fail: 
+            let
+              fa = v;
+            in
+              module."Data.Semigroup".append module."Data.Semigroup".semigroupString "(App " (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Show".show dictShow fa) ")");
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/App.purs at 36:1 - 37:44";
+        in
+          __pattern0 __patternFail;
+    };
+  semigroupApp = dictApply: dictSemigroup: 
+    { append = v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              fa1 = v;
+              fa2 = v1;
+            in
+              module."Control.Apply".lift2 dictApply (module."Data.Semigroup".append dictSemigroup) fa1 fa2;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/App.purs at 39:1 - 40:58";
+        in
+          __pattern0 __patternFail;
+    };
+  plusApp = dictPlus: dictPlus;
+  newtypeApp = {"Coercible0" = __unused: module."Prim".undefined;};
+  monoidApp = dictApplicative: dictMonoid: 
+    { mempty = module."Control.Applicative".pure dictApplicative (module."Data.Monoid".mempty dictMonoid);
+      "Semigroup0" = __unused: semigroupApp (dictApplicative."Apply0" module."Prim".undefined) (dictMonoid."Semigroup0" module."Prim".undefined);
+    };
+  monadPlusApp = dictMonadPlus: dictMonadPlus;
+  monadApp = dictMonad: dictMonad;
+  lazyApp = dictLazy: dictLazy;
+  hoistLowerApp = module."LocalDependency.Unsafe.Coerce".unsafeCoerce;
+  hoistLiftApp = module."LocalDependency.Unsafe.Coerce".unsafeCoerce;
+  hoistApp = f: v: 
+    let
+      __pattern0 = __fail: 
+        let
+          f1 = f;
+          fa = v;
+        in
+          f1 fa;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/App.purs at 21:1 - 21:51";
+    in
+      __pattern0 __patternFail;
+  functorApp = dictFunctor: dictFunctor;
+  extendApp = dictExtend: dictExtend;
+  eqApp = dictEq1: dictEq: 
+    { eq = x: y: 
+        let
+          __pattern0 = __fail: 
+            let
+              l = x;
+              r = y;
+            in
+              module."Data.Eq".eq1 dictEq1 dictEq l r;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/App.purs at 31:1 - 31:55";
+        in
+          __pattern0 __patternFail;
+    };
+  ordApp = dictOrd1: dictOrd: 
+    { compare = x: y: 
+        let
+          __pattern0 = __fail: 
+            let
+              l = x;
+              r = y;
+            in
+              module."Data.Ord".compare1 dictOrd1 dictOrd l r;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/App.purs at 33:1 - 33:59";
+        in
+          __pattern0 __patternFail;
+      "Eq0" = __unused: eqApp (dictOrd1."Eq10" module."Prim".undefined) (dictOrd."Eq0" module."Prim".undefined);
+    };
+  eq1App = dictEq1: {eq1 = dictEq: module."Data.Eq".eq (eqApp dictEq1 dictEq);};
+  ord1App = dictOrd1: 
+    { compare1 = dictOrd: module."Data.Ord".compare (ordApp dictOrd1 dictOrd);
+      "Eq10" = __unused: eq1App (dictOrd1."Eq10" module."Prim".undefined);
+    };
+  comonadApp = dictComonad: dictComonad;
+  bindApp = dictBind: dictBind;
+  applyApp = dictApply: dictApply;
+  applicativeApp = dictApplicative: dictApplicative;
+  alternativeApp = dictAlternative: dictAlternative;
+  monadZeroApp = dictMonadZero: 
+    { "Monad0" = __unused: monadApp (dictMonadZero."Monad0" module."Prim".undefined);
+      "Alternative1" = __unused: alternativeApp (dictMonadZero."Alternative1" module."Prim".undefined);
+      "MonadZeroIsDeprecated2" = __unused: module."Prim".undefined;
+    };
+  altApp = dictAlt: dictAlt;
+in
+  {inherit App hoistApp hoistLiftApp hoistLowerApp newtypeApp eqApp eq1App ordApp ord1App showApp semigroupApp monoidApp monadZeroApp functorApp applyApp applicativeApp bindApp monadApp altApp plusApp alternativeApp monadPlusApp lazyApp extendApp comonadApp;}
+;
+
+LocalDependency-Data-Functor-Clown_default-nix = 
+let
+  module = 
+    { "Control.Applicative" = Control-Applicative_default-nix;
+      "Control.Apply" = Control-Apply_default-nix;
+      "Data.Eq" = Data-Eq_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.Newtype" = Data-Newtype_default-nix;
+      "Data.Ord" = Data-Ord_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+      "Data.Show" = Data-Show_default-nix;
+      "LocalDependency.Control.Biapplicative" = LocalDependency-Control-Biapplicative_default-nix;
+      "LocalDependency.Control.Biapply" = LocalDependency-Control-Biapply_default-nix;
+      "LocalDependency.Data.Bifunctor" = LocalDependency-Data-Bifunctor_default-nix;
+      "LocalDependency.Data.Functor.Contravariant" = LocalDependency-Data-Functor-Contravariant_default-nix;
+      "LocalDependency.Data.Profunctor" = LocalDependency-Data-Profunctor_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  Clown = x: x;
+  showClown = dictShow: 
+    { show = v: 
+        let
+          __pattern0 = __fail: 
+            let
+              x = v;
+            in
+              module."Data.Semigroup".append module."Data.Semigroup".semigroupString "(Clown " (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Show".show dictShow x) ")");
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Clown.purs at 25:1 - 26:46";
+        in
+          __pattern0 __patternFail;
+    };
+  profunctorClown = dictContravariant: 
+    { dimap = f: v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              a = v1;
+            in
+              module."LocalDependency.Data.Functor.Contravariant".cmap dictContravariant f1 a;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Clown.purs at 40:1 - 41:41";
+        in
+          __pattern0 __patternFail;
+    };
+  ordClown = dictOrd: dictOrd;
+  newtypeClown = {"Coercible0" = __unused: module."Prim".undefined;};
+  hoistClown = f: v: 
+    let
+      __pattern0 = __fail: 
+        let
+          f1 = f;
+          a = v;
+        in
+          f1 a;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Clown.purs at 43:1 - 43:69";
+    in
+      __pattern0 __patternFail;
+  functorClown = 
+    { map = v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              a = v1;
+            in
+              a;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Clown.purs at 28:1 - 29:28";
+        in
+          __pattern0 __patternFail;
+    };
+  eqClown = dictEq: dictEq;
+  bifunctorClown = dictFunctor: 
+    { bimap = f: v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              a = v1;
+            in
+              module."Data.Functor".map dictFunctor f1 a;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Clown.purs at 31:1 - 32:40";
+        in
+          __pattern0 __patternFail;
+    };
+  biapplyClown = dictApply: 
+    { biapply = v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              fg = v;
+              xy = v1;
+            in
+              module."Control.Apply".apply dictApply fg xy;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Clown.purs at 34:1 - 35:52";
+        in
+          __pattern0 __patternFail;
+      "Bifunctor0" = __unused: bifunctorClown (dictApply."Functor0" module."Prim".undefined);
+    };
+  biapplicativeClown = dictApplicative: 
+    { bipure = a: v: module."Control.Applicative".pure dictApplicative a;
+      "Biapply0" = __unused: biapplyClown (dictApplicative."Apply0" module."Prim".undefined);
+    };
+in
+  {inherit Clown hoistClown newtypeClown eqClown ordClown showClown functorClown bifunctorClown biapplyClown biapplicativeClown profunctorClown;}
+;
+
+LocalDependency-Data-Functor-Compose_default-nix = 
+let
+  module = 
+    { "Control.Applicative" = Control-Applicative_default-nix;
+      "Control.Apply" = Control-Apply_default-nix;
+      "Control.Semigroupoid" = Control-Semigroupoid_default-nix;
+      "Data.Eq" = Data-Eq_default-nix;
+      "Data.Function" = Data-Function_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.Newtype" = Data-Newtype_default-nix;
+      "Data.Ord" = Data-Ord_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+      "Data.Show" = Data-Show_default-nix;
+      "LocalDependency.Control.Alt" = LocalDependency-Control-Alt_default-nix;
+      "LocalDependency.Control.Alternative" = LocalDependency-Control-Alternative_default-nix;
+      "LocalDependency.Control.Plus" = LocalDependency-Control-Plus_default-nix;
+      "LocalDependency.Data.Functor.App" = LocalDependency-Data-Functor-App_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  Compose = x: x;
+  showCompose = dictShow: 
+    { show = v: 
+        let
+          __pattern0 = __fail: 
+            let
+              fga = v;
+            in
+              module."Data.Semigroup".append module."Data.Semigroup".semigroupString "(Compose " (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Show".show dictShow fga) ")");
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Compose.purs at 40:1 - 41:54";
+        in
+          __pattern0 __patternFail;
+    };
+  newtypeCompose = {"Coercible0" = __unused: module."Prim".undefined;};
+  functorCompose = dictFunctor: dictFunctor1: 
+    { map = f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              fga = v;
+            in
+              module."Data.Function".apply Compose (module."Data.Functor".map dictFunctor (module."Data.Functor".map dictFunctor1 f1) fga);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Compose.purs at 43:1 - 44:48";
+        in
+          __pattern0 __patternFail;
+    };
+  eqCompose = dictEq1: dictEq11: dictEq: 
+    { eq = v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              fga1 = v;
+              fga2 = v1;
+            in
+              module."Data.Eq".eq1 dictEq1 (module."LocalDependency.Data.Functor.App".eqApp dictEq11 dictEq) (module."LocalDependency.Data.Functor.App".hoistLiftApp fga1) (module."LocalDependency.Data.Functor.App".hoistLiftApp fga2);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Compose.purs at 28:1 - 30:48";
+        in
+          __pattern0 __patternFail;
+    };
+  ordCompose = dictOrd1: dictOrd11: dictOrd: 
+    { compare = v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              fga1 = v;
+              fga2 = v1;
+            in
+              module."Data.Ord".compare1 dictOrd1 (module."LocalDependency.Data.Functor.App".ordApp dictOrd11 dictOrd) (module."LocalDependency.Data.Functor.App".hoistLiftApp fga1) (module."LocalDependency.Data.Functor.App".hoistLiftApp fga2);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Compose.purs at 34:1 - 36:53";
+        in
+          __pattern0 __patternFail;
+      "Eq0" = __unused: eqCompose (dictOrd1."Eq10" module."Prim".undefined) (dictOrd11."Eq10" module."Prim".undefined) (dictOrd."Eq0" module."Prim".undefined);
+    };
+  eq1Compose = dictEq1: dictEq11: {eq1 = dictEq: module."Data.Eq".eq (eqCompose dictEq1 dictEq11 dictEq);};
+  ord1Compose = dictOrd1: dictOrd11: 
+    { compare1 = dictOrd: module."Data.Ord".compare (ordCompose dictOrd1 dictOrd11 dictOrd);
+      "Eq10" = __unused: eq1Compose (dictOrd1."Eq10" module."Prim".undefined) (dictOrd11."Eq10" module."Prim".undefined);
+    };
+  bihoistCompose = dictFunctor: natF: natG: v: 
+    let
+      __pattern0 = __fail: 
+        let
+          natF1 = natF;
+          natG1 = natG;
+          fga = v;
+        in
+          natF1 (module."Data.Functor".map dictFunctor natG1 fga);
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Compose.purs at 17:1 - 23:17";
+    in
+      __pattern0 __patternFail;
+  applyCompose = dictApply: dictApply1: 
+    { apply = v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              f = v;
+              x = v1;
+            in
+              module."Data.Function".apply Compose (module."Control.Apply".apply dictApply (module."Data.Functor".map (dictApply."Functor0" module."Prim".undefined) (module."Control.Apply".apply dictApply1) f) x);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Compose.purs at 46:1 - 47:62";
+        in
+          __pattern0 __patternFail;
+      "Functor0" = __unused: functorCompose (dictApply."Functor0" module."Prim".undefined) (dictApply1."Functor0" module."Prim".undefined);
+    };
+  applicativeCompose = dictApplicative: dictApplicative1: 
+    { pure = module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn Compose (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Control.Applicative".pure dictApplicative) (module."Control.Applicative".pure dictApplicative1));
+      "Apply0" = __unused: applyCompose (dictApplicative."Apply0" module."Prim".undefined) (dictApplicative1."Apply0" module."Prim".undefined);
+    };
+  altCompose = dictAlt: dictFunctor: 
+    { alt = v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              a = v;
+              b = v1;
+            in
+              module."Data.Function".apply Compose (module."LocalDependency.Control.Alt".alt dictAlt a b);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Compose.purs at 52:1 - 53:50";
+        in
+          __pattern0 __patternFail;
+      "Functor0" = __unused: functorCompose (dictAlt."Functor0" module."Prim".undefined) dictFunctor;
+    };
+  plusCompose = dictPlus: dictFunctor: 
+    { empty = module."LocalDependency.Control.Plus".empty dictPlus;
+      "Alt0" = __unused: altCompose (dictPlus."Alt0" module."Prim".undefined) dictFunctor;
+    };
+  alternativeCompose = dictAlternative: dictApplicative: 
+    { "Applicative0" = __unused: applicativeCompose (dictAlternative."Applicative0" module."Prim".undefined) dictApplicative;
+      "Plus1" = __unused: plusCompose (dictAlternative."Plus1" module."Prim".undefined) ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined);
+    };
+in
+  {inherit Compose bihoistCompose newtypeCompose eqCompose eq1Compose ordCompose ord1Compose showCompose functorCompose applyCompose applicativeCompose altCompose plusCompose alternativeCompose;}
+;
+
+LocalDependency-Data-Functor-Contravariant_default-nix = 
+let
+  module = 
+    { "Data.Functor" = Data-Functor_default-nix;
+      "Data.Void" = Data-Void_default-nix;
+      "LocalDependency.Data.Const" = LocalDependency-Data-Const_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  Contravariant-Dict = x: x;
+  contravariantConst = 
+    { cmap = v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              x = v1;
+            in
+              x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/contravariant/Data/Functor/Contravariant.purs at 34:1 - 35:29";
+        in
+          __pattern0 __patternFail;
+    };
+  cmap = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.cmap;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/contravariant/Data/Functor/Contravariant.purs at 17:3 - 17:45";
+    in
+      __pattern0 __patternFail;
+  cmapFlipped = dictContravariant: x: f: cmap dictContravariant f x;
+  coerce = dictContravariant: dictFunctor: a: module."Data.Functor".map dictFunctor module."Data.Void".absurd (cmap dictContravariant module."Data.Void".absurd a);
+  imapC = dictContravariant: v: f: cmap dictContravariant f;
+in
+  {inherit cmap cmapFlipped coerce imapC contravariantConst;}
+;
+
+LocalDependency-Data-Functor-Coproduct-Inject_default-nix = 
+let
+  module = 
+    { "Control.Category" = Control-Category_default-nix;
+      "Control.Semigroupoid" = Control-Semigroupoid_default-nix;
+      "Data.Function" = Data-Function_default-nix;
+      "LocalDependency.Data.Either" = LocalDependency-Data-Either_default-nix;
+      "LocalDependency.Data.Functor.Coproduct" = LocalDependency-Data-Functor-Coproduct_default-nix;
+      "LocalDependency.Data.Maybe" = LocalDependency-Data-Maybe_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  Inject-Dict = x: x;
+  prj = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.prj;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Inject.purs at 12:3 - 12:38";
+    in
+      __pattern0 __patternFail;
+  injectReflexive = 
+    { inj = module."Control.Category".identity module."Control.Category".categoryFn;
+      prj = module."LocalDependency.Data.Maybe".Just;
+    };
+  injectLeft = 
+    { inj = module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."LocalDependency.Data.Functor.Coproduct".Coproduct module."LocalDependency.Data.Either".Left;
+      prj = module."LocalDependency.Data.Functor.Coproduct".coproduct module."LocalDependency.Data.Maybe".Just (module."Data.Function".const module."LocalDependency.Data.Maybe".Nothing);
+    };
+  inj = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.inj;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Inject.purs at 11:3 - 11:30";
+    in
+      __pattern0 __patternFail;
+  injectRight = dictInject: 
+    { inj = module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."LocalDependency.Data.Functor.Coproduct".Coproduct (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."LocalDependency.Data.Either".Right (inj dictInject));
+      prj = module."LocalDependency.Data.Functor.Coproduct".coproduct (module."Data.Function".const module."LocalDependency.Data.Maybe".Nothing) (prj dictInject);
+    };
+in
+  {inherit inj prj injectReflexive injectLeft injectRight;}
+;
+
+LocalDependency-Data-Functor-Coproduct-Nested_default-nix = 
+let
+  module = 
+    { "Data.Newtype" = Data-Newtype_default-nix;
+      "Data.Void" = Data-Void_default-nix;
+      "LocalDependency.Data.Const" = LocalDependency-Data-Const_default-nix;
+      "LocalDependency.Data.Either" = LocalDependency-Data-Either_default-nix;
+      "LocalDependency.Data.Functor.Coproduct" = LocalDependency-Data-Functor-Coproduct_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  in9 = v: module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".left v))))))));
+  in8 = v: module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".left v)))))));
+  in7 = v: module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".left v))))));
+  in6 = v: module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".left v)))));
+  in5 = v: module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".left v))));
+  in4 = v: module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".left v)));
+  in3 = v: module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".left v));
+  in2 = v: module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".left v);
+  in10 = v: module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".right (module."LocalDependency.Data.Functor.Coproduct".left v)))))))));
+  in1 = module."LocalDependency.Data.Functor.Coproduct".left;
+  coproduct9 = a: b: c: d: e: f: g: h: i: y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Left"
+          then 
+            let
+              r = y.__field0;
+            in
+              a r
+          else __fail;
+      __pattern1 = __fail: 
+        if y.__tag == "Right"
+          then 
+            let
+              _1 = y.__field0;
+            in
+              
+              let
+                __pattern0 = __fail: 
+                  if _1.__tag == "Left"
+                    then 
+                      let
+                        r = _1.__field0;
+                      in
+                        b r
+                    else __fail;
+                __pattern1 = __fail: 
+                  if _1.__tag == "Right"
+                    then 
+                      let
+                        _2 = _1.__field0;
+                      in
+                        
+                        let
+                          __pattern0 = __fail: 
+                            if _2.__tag == "Left"
+                              then 
+                                let
+                                  r = _2.__field0;
+                                in
+                                  c r
+                              else __fail;
+                          __pattern1 = __fail: 
+                            if _2.__tag == "Right"
+                              then 
+                                let
+                                  _3 = _2.__field0;
+                                in
+                                  
+                                  let
+                                    __pattern0 = __fail: 
+                                      if _3.__tag == "Left"
+                                        then 
+                                          let
+                                            r = _3.__field0;
+                                          in
+                                            d r
+                                        else __fail;
+                                    __pattern1 = __fail: 
+                                      if _3.__tag == "Right"
+                                        then 
+                                          let
+                                            _4 = _3.__field0;
+                                          in
+                                            
+                                            let
+                                              __pattern0 = __fail: 
+                                                if _4.__tag == "Left"
+                                                  then 
+                                                    let
+                                                      r = _4.__field0;
+                                                    in
+                                                      e r
+                                                  else __fail;
+                                              __pattern1 = __fail: 
+                                                if _4.__tag == "Right"
+                                                  then 
+                                                    let
+                                                      _5 = _4.__field0;
+                                                    in
+                                                      
+                                                      let
+                                                        __pattern0 = __fail: 
+                                                          if _5.__tag == "Left"
+                                                            then 
+                                                              let
+                                                                r = _5.__field0;
+                                                              in
+                                                                f r
+                                                            else __fail;
+                                                        __pattern1 = __fail: 
+                                                          if _5.__tag == "Right"
+                                                            then 
+                                                              let
+                                                                _6 = _5.__field0;
+                                                              in
+                                                                
+                                                                let
+                                                                  __pattern0 = __fail: 
+                                                                    if _6.__tag == "Left"
+                                                                      then 
+                                                                        let
+                                                                          r = _6.__field0;
+                                                                        in
+                                                                          g r
+                                                                      else __fail;
+                                                                  __pattern1 = __fail: 
+                                                                    if _6.__tag == "Right"
+                                                                      then 
+                                                                        let
+                                                                          _7 = _6.__field0;
+                                                                        in
+                                                                          
+                                                                          let
+                                                                            __pattern0 = __fail: 
+                                                                              if _7.__tag == "Left"
+                                                                                then 
+                                                                                  let
+                                                                                    r = _7.__field0;
+                                                                                  in
+                                                                                    h r
+                                                                                else __fail;
+                                                                            __pattern1 = __fail: 
+                                                                              if _7.__tag == "Right"
+                                                                                then 
+                                                                                  let
+                                                                                    _8 = _7.__field0;
+                                                                                  in
+                                                                                    
+                                                                                    let
+                                                                                      __pattern0 = __fail: 
+                                                                                        if _8.__tag == "Left"
+                                                                                          then 
+                                                                                            let
+                                                                                              r = _8.__field0;
+                                                                                            in
+                                                                                              i r
+                                                                                          else __fail;
+                                                                                      __pattern1 = __fail: 
+                                                                                        if _8.__tag == "Right"
+                                                                                          then 
+                                                                                            let
+                                                                                              _9 = _8.__field0;
+                                                                                            in
+                                                                                              module."Data.Void".absurd (module."Data.Newtype".unwrap module."Prim".undefined _9)
+                                                                                          else __fail;
+                                                                                      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 248:41 - 250:61";
+                                                                                    in
+                                                                                      __pattern0 (__pattern1 __patternFail)
+                                                                                else __fail;
+                                                                            __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 246:39 - 250:61";
+                                                                          in
+                                                                            __pattern0 (__pattern1 __patternFail)
+                                                                      else __fail;
+                                                                  __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 244:37 - 250:61";
+                                                                in
+                                                                  __pattern0 (__pattern1 __patternFail)
+                                                            else __fail;
+                                                        __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 242:35 - 250:61";
+                                                      in
+                                                        __pattern0 (__pattern1 __patternFail)
+                                                  else __fail;
+                                              __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 240:33 - 250:61";
+                                            in
+                                              __pattern0 (__pattern1 __patternFail)
+                                        else __fail;
+                                    __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 238:31 - 250:61";
+                                  in
+                                    __pattern0 (__pattern1 __patternFail)
+                              else __fail;
+                          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 236:29 - 250:61";
+                        in
+                          __pattern0 (__pattern1 __patternFail)
+                    else __fail;
+                __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 234:27 - 250:61";
+              in
+                __pattern0 (__pattern1 __patternFail)
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 232:34 - 250:61";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  coproduct8 = a: b: c: d: e: f: g: h: y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Left"
+          then 
+            let
+              r = y.__field0;
+            in
+              a r
+          else __fail;
+      __pattern1 = __fail: 
+        if y.__tag == "Right"
+          then 
+            let
+              _1 = y.__field0;
+            in
+              
+              let
+                __pattern0 = __fail: 
+                  if _1.__tag == "Left"
+                    then 
+                      let
+                        r = _1.__field0;
+                      in
+                        b r
+                    else __fail;
+                __pattern1 = __fail: 
+                  if _1.__tag == "Right"
+                    then 
+                      let
+                        _2 = _1.__field0;
+                      in
+                        
+                        let
+                          __pattern0 = __fail: 
+                            if _2.__tag == "Left"
+                              then 
+                                let
+                                  r = _2.__field0;
+                                in
+                                  c r
+                              else __fail;
+                          __pattern1 = __fail: 
+                            if _2.__tag == "Right"
+                              then 
+                                let
+                                  _3 = _2.__field0;
+                                in
+                                  
+                                  let
+                                    __pattern0 = __fail: 
+                                      if _3.__tag == "Left"
+                                        then 
+                                          let
+                                            r = _3.__field0;
+                                          in
+                                            d r
+                                        else __fail;
+                                    __pattern1 = __fail: 
+                                      if _3.__tag == "Right"
+                                        then 
+                                          let
+                                            _4 = _3.__field0;
+                                          in
+                                            
+                                            let
+                                              __pattern0 = __fail: 
+                                                if _4.__tag == "Left"
+                                                  then 
+                                                    let
+                                                      r = _4.__field0;
+                                                    in
+                                                      e r
+                                                  else __fail;
+                                              __pattern1 = __fail: 
+                                                if _4.__tag == "Right"
+                                                  then 
+                                                    let
+                                                      _5 = _4.__field0;
+                                                    in
+                                                      
+                                                      let
+                                                        __pattern0 = __fail: 
+                                                          if _5.__tag == "Left"
+                                                            then 
+                                                              let
+                                                                r = _5.__field0;
+                                                              in
+                                                                f r
+                                                            else __fail;
+                                                        __pattern1 = __fail: 
+                                                          if _5.__tag == "Right"
+                                                            then 
+                                                              let
+                                                                _6 = _5.__field0;
+                                                              in
+                                                                
+                                                                let
+                                                                  __pattern0 = __fail: 
+                                                                    if _6.__tag == "Left"
+                                                                      then 
+                                                                        let
+                                                                          r = _6.__field0;
+                                                                        in
+                                                                          g r
+                                                                      else __fail;
+                                                                  __pattern1 = __fail: 
+                                                                    if _6.__tag == "Right"
+                                                                      then 
+                                                                        let
+                                                                          _7 = _6.__field0;
+                                                                        in
+                                                                          
+                                                                          let
+                                                                            __pattern0 = __fail: 
+                                                                              if _7.__tag == "Left"
+                                                                                then 
+                                                                                  let
+                                                                                    r = _7.__field0;
+                                                                                  in
+                                                                                    h r
+                                                                                else __fail;
+                                                                            __pattern1 = __fail: 
+                                                                              if _7.__tag == "Right"
+                                                                                then 
+                                                                                  let
+                                                                                    _8 = _7.__field0;
+                                                                                  in
+                                                                                    module."Data.Void".absurd (module."Data.Newtype".unwrap module."Prim".undefined _8)
+                                                                                else __fail;
+                                                                            __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 227:39 - 229:59";
+                                                                          in
+                                                                            __pattern0 (__pattern1 __patternFail)
+                                                                      else __fail;
+                                                                  __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 225:37 - 229:59";
+                                                                in
+                                                                  __pattern0 (__pattern1 __patternFail)
+                                                            else __fail;
+                                                        __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 223:35 - 229:59";
+                                                      in
+                                                        __pattern0 (__pattern1 __patternFail)
+                                                  else __fail;
+                                              __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 221:33 - 229:59";
+                                            in
+                                              __pattern0 (__pattern1 __patternFail)
+                                        else __fail;
+                                    __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 219:31 - 229:59";
+                                  in
+                                    __pattern0 (__pattern1 __patternFail)
+                              else __fail;
+                          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 217:29 - 229:59";
+                        in
+                          __pattern0 (__pattern1 __patternFail)
+                    else __fail;
+                __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 215:27 - 229:59";
+              in
+                __pattern0 (__pattern1 __patternFail)
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 213:32 - 229:59";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  coproduct7 = a: b: c: d: e: f: g: y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Left"
+          then 
+            let
+              r = y.__field0;
+            in
+              a r
+          else __fail;
+      __pattern1 = __fail: 
+        if y.__tag == "Right"
+          then 
+            let
+              _1 = y.__field0;
+            in
+              
+              let
+                __pattern0 = __fail: 
+                  if _1.__tag == "Left"
+                    then 
+                      let
+                        r = _1.__field0;
+                      in
+                        b r
+                    else __fail;
+                __pattern1 = __fail: 
+                  if _1.__tag == "Right"
+                    then 
+                      let
+                        _2 = _1.__field0;
+                      in
+                        
+                        let
+                          __pattern0 = __fail: 
+                            if _2.__tag == "Left"
+                              then 
+                                let
+                                  r = _2.__field0;
+                                in
+                                  c r
+                              else __fail;
+                          __pattern1 = __fail: 
+                            if _2.__tag == "Right"
+                              then 
+                                let
+                                  _3 = _2.__field0;
+                                in
+                                  
+                                  let
+                                    __pattern0 = __fail: 
+                                      if _3.__tag == "Left"
+                                        then 
+                                          let
+                                            r = _3.__field0;
+                                          in
+                                            d r
+                                        else __fail;
+                                    __pattern1 = __fail: 
+                                      if _3.__tag == "Right"
+                                        then 
+                                          let
+                                            _4 = _3.__field0;
+                                          in
+                                            
+                                            let
+                                              __pattern0 = __fail: 
+                                                if _4.__tag == "Left"
+                                                  then 
+                                                    let
+                                                      r = _4.__field0;
+                                                    in
+                                                      e r
+                                                  else __fail;
+                                              __pattern1 = __fail: 
+                                                if _4.__tag == "Right"
+                                                  then 
+                                                    let
+                                                      _5 = _4.__field0;
+                                                    in
+                                                      
+                                                      let
+                                                        __pattern0 = __fail: 
+                                                          if _5.__tag == "Left"
+                                                            then 
+                                                              let
+                                                                r = _5.__field0;
+                                                              in
+                                                                f r
+                                                            else __fail;
+                                                        __pattern1 = __fail: 
+                                                          if _5.__tag == "Right"
+                                                            then 
+                                                              let
+                                                                _6 = _5.__field0;
+                                                              in
+                                                                
+                                                                let
+                                                                  __pattern0 = __fail: 
+                                                                    if _6.__tag == "Left"
+                                                                      then 
+                                                                        let
+                                                                          r = _6.__field0;
+                                                                        in
+                                                                          g r
+                                                                      else __fail;
+                                                                  __pattern1 = __fail: 
+                                                                    if _6.__tag == "Right"
+                                                                      then 
+                                                                        let
+                                                                          _7 = _6.__field0;
+                                                                        in
+                                                                          module."Data.Void".absurd (module."Data.Newtype".unwrap module."Prim".undefined _7)
+                                                                      else __fail;
+                                                                  __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 208:37 - 210:57";
+                                                                in
+                                                                  __pattern0 (__pattern1 __patternFail)
+                                                            else __fail;
+                                                        __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 206:35 - 210:57";
+                                                      in
+                                                        __pattern0 (__pattern1 __patternFail)
+                                                  else __fail;
+                                              __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 204:33 - 210:57";
+                                            in
+                                              __pattern0 (__pattern1 __patternFail)
+                                        else __fail;
+                                    __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 202:31 - 210:57";
+                                  in
+                                    __pattern0 (__pattern1 __patternFail)
+                              else __fail;
+                          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 200:29 - 210:57";
+                        in
+                          __pattern0 (__pattern1 __patternFail)
+                    else __fail;
+                __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 198:27 - 210:57";
+              in
+                __pattern0 (__pattern1 __patternFail)
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 196:30 - 210:57";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  coproduct6 = a: b: c: d: e: f: y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Left"
+          then 
+            let
+              r = y.__field0;
+            in
+              a r
+          else __fail;
+      __pattern1 = __fail: 
+        if y.__tag == "Right"
+          then 
+            let
+              _1 = y.__field0;
+            in
+              
+              let
+                __pattern0 = __fail: 
+                  if _1.__tag == "Left"
+                    then 
+                      let
+                        r = _1.__field0;
+                      in
+                        b r
+                    else __fail;
+                __pattern1 = __fail: 
+                  if _1.__tag == "Right"
+                    then 
+                      let
+                        _2 = _1.__field0;
+                      in
+                        
+                        let
+                          __pattern0 = __fail: 
+                            if _2.__tag == "Left"
+                              then 
+                                let
+                                  r = _2.__field0;
+                                in
+                                  c r
+                              else __fail;
+                          __pattern1 = __fail: 
+                            if _2.__tag == "Right"
+                              then 
+                                let
+                                  _3 = _2.__field0;
+                                in
+                                  
+                                  let
+                                    __pattern0 = __fail: 
+                                      if _3.__tag == "Left"
+                                        then 
+                                          let
+                                            r = _3.__field0;
+                                          in
+                                            d r
+                                        else __fail;
+                                    __pattern1 = __fail: 
+                                      if _3.__tag == "Right"
+                                        then 
+                                          let
+                                            _4 = _3.__field0;
+                                          in
+                                            
+                                            let
+                                              __pattern0 = __fail: 
+                                                if _4.__tag == "Left"
+                                                  then 
+                                                    let
+                                                      r = _4.__field0;
+                                                    in
+                                                      e r
+                                                  else __fail;
+                                              __pattern1 = __fail: 
+                                                if _4.__tag == "Right"
+                                                  then 
+                                                    let
+                                                      _5 = _4.__field0;
+                                                    in
+                                                      
+                                                      let
+                                                        __pattern0 = __fail: 
+                                                          if _5.__tag == "Left"
+                                                            then 
+                                                              let
+                                                                r = _5.__field0;
+                                                              in
+                                                                f r
+                                                            else __fail;
+                                                        __pattern1 = __fail: 
+                                                          if _5.__tag == "Right"
+                                                            then 
+                                                              let
+                                                                _6 = _5.__field0;
+                                                              in
+                                                                module."Data.Void".absurd (module."Data.Newtype".unwrap module."Prim".undefined _6)
+                                                            else __fail;
+                                                        __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 191:35 - 193:55";
+                                                      in
+                                                        __pattern0 (__pattern1 __patternFail)
+                                                  else __fail;
+                                              __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 189:33 - 193:55";
+                                            in
+                                              __pattern0 (__pattern1 __patternFail)
+                                        else __fail;
+                                    __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 187:31 - 193:55";
+                                  in
+                                    __pattern0 (__pattern1 __patternFail)
+                              else __fail;
+                          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 185:29 - 193:55";
+                        in
+                          __pattern0 (__pattern1 __patternFail)
+                    else __fail;
+                __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 183:27 - 193:55";
+              in
+                __pattern0 (__pattern1 __patternFail)
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 181:28 - 193:55";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  coproduct5 = a: b: c: d: e: y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Left"
+          then 
+            let
+              r = y.__field0;
+            in
+              a r
+          else __fail;
+      __pattern1 = __fail: 
+        if y.__tag == "Right"
+          then 
+            let
+              _1 = y.__field0;
+            in
+              
+              let
+                __pattern0 = __fail: 
+                  if _1.__tag == "Left"
+                    then 
+                      let
+                        r = _1.__field0;
+                      in
+                        b r
+                    else __fail;
+                __pattern1 = __fail: 
+                  if _1.__tag == "Right"
+                    then 
+                      let
+                        _2 = _1.__field0;
+                      in
+                        
+                        let
+                          __pattern0 = __fail: 
+                            if _2.__tag == "Left"
+                              then 
+                                let
+                                  r = _2.__field0;
+                                in
+                                  c r
+                              else __fail;
+                          __pattern1 = __fail: 
+                            if _2.__tag == "Right"
+                              then 
+                                let
+                                  _3 = _2.__field0;
+                                in
+                                  
+                                  let
+                                    __pattern0 = __fail: 
+                                      if _3.__tag == "Left"
+                                        then 
+                                          let
+                                            r = _3.__field0;
+                                          in
+                                            d r
+                                        else __fail;
+                                    __pattern1 = __fail: 
+                                      if _3.__tag == "Right"
+                                        then 
+                                          let
+                                            _4 = _3.__field0;
+                                          in
+                                            
+                                            let
+                                              __pattern0 = __fail: 
+                                                if _4.__tag == "Left"
+                                                  then 
+                                                    let
+                                                      r = _4.__field0;
+                                                    in
+                                                      e r
+                                                  else __fail;
+                                              __pattern1 = __fail: 
+                                                if _4.__tag == "Right"
+                                                  then 
+                                                    let
+                                                      _5 = _4.__field0;
+                                                    in
+                                                      module."Data.Void".absurd (module."Data.Newtype".unwrap module."Prim".undefined _5)
+                                                  else __fail;
+                                              __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 176:33 - 178:53";
+                                            in
+                                              __pattern0 (__pattern1 __patternFail)
+                                        else __fail;
+                                    __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 174:31 - 178:53";
+                                  in
+                                    __pattern0 (__pattern1 __patternFail)
+                              else __fail;
+                          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 172:29 - 178:53";
+                        in
+                          __pattern0 (__pattern1 __patternFail)
+                    else __fail;
+                __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 170:27 - 178:53";
+              in
+                __pattern0 (__pattern1 __patternFail)
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 168:26 - 178:53";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  coproduct4 = a: b: c: d: y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Left"
+          then 
+            let
+              r = y.__field0;
+            in
+              a r
+          else __fail;
+      __pattern1 = __fail: 
+        if y.__tag == "Right"
+          then 
+            let
+              _1 = y.__field0;
+            in
+              
+              let
+                __pattern0 = __fail: 
+                  if _1.__tag == "Left"
+                    then 
+                      let
+                        r = _1.__field0;
+                      in
+                        b r
+                    else __fail;
+                __pattern1 = __fail: 
+                  if _1.__tag == "Right"
+                    then 
+                      let
+                        _2 = _1.__field0;
+                      in
+                        
+                        let
+                          __pattern0 = __fail: 
+                            if _2.__tag == "Left"
+                              then 
+                                let
+                                  r = _2.__field0;
+                                in
+                                  c r
+                              else __fail;
+                          __pattern1 = __fail: 
+                            if _2.__tag == "Right"
+                              then 
+                                let
+                                  _3 = _2.__field0;
+                                in
+                                  
+                                  let
+                                    __pattern0 = __fail: 
+                                      if _3.__tag == "Left"
+                                        then 
+                                          let
+                                            r = _3.__field0;
+                                          in
+                                            d r
+                                        else __fail;
+                                    __pattern1 = __fail: 
+                                      if _3.__tag == "Right"
+                                        then 
+                                          let
+                                            _4 = _3.__field0;
+                                          in
+                                            module."Data.Void".absurd (module."Data.Newtype".unwrap module."Prim".undefined _4)
+                                        else __fail;
+                                    __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 163:31 - 165:51";
+                                  in
+                                    __pattern0 (__pattern1 __patternFail)
+                              else __fail;
+                          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 161:29 - 165:51";
+                        in
+                          __pattern0 (__pattern1 __patternFail)
+                    else __fail;
+                __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 159:27 - 165:51";
+              in
+                __pattern0 (__pattern1 __patternFail)
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 157:24 - 165:51";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  coproduct3 = a: b: c: y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Left"
+          then 
+            let
+              r = y.__field0;
+            in
+              a r
+          else __fail;
+      __pattern1 = __fail: 
+        if y.__tag == "Right"
+          then 
+            let
+              _1 = y.__field0;
+            in
+              
+              let
+                __pattern0 = __fail: 
+                  if _1.__tag == "Left"
+                    then 
+                      let
+                        r = _1.__field0;
+                      in
+                        b r
+                    else __fail;
+                __pattern1 = __fail: 
+                  if _1.__tag == "Right"
+                    then 
+                      let
+                        _2 = _1.__field0;
+                      in
+                        
+                        let
+                          __pattern0 = __fail: 
+                            if _2.__tag == "Left"
+                              then 
+                                let
+                                  r = _2.__field0;
+                                in
+                                  c r
+                              else __fail;
+                          __pattern1 = __fail: 
+                            if _2.__tag == "Right"
+                              then 
+                                let
+                                  _3 = _2.__field0;
+                                in
+                                  module."Data.Void".absurd (module."Data.Newtype".unwrap module."Prim".undefined _3)
+                              else __fail;
+                          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 152:29 - 154:49";
+                        in
+                          __pattern0 (__pattern1 __patternFail)
+                    else __fail;
+                __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 150:27 - 154:49";
+              in
+                __pattern0 (__pattern1 __patternFail)
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 148:22 - 154:49";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  coproduct2 = a: b: y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Left"
+          then 
+            let
+              r = y.__field0;
+            in
+              a r
+          else __fail;
+      __pattern1 = __fail: 
+        if y.__tag == "Right"
+          then 
+            let
+              _1 = y.__field0;
+            in
+              
+              let
+                __pattern0 = __fail: 
+                  if _1.__tag == "Left"
+                    then 
+                      let
+                        r = _1.__field0;
+                      in
+                        b r
+                    else __fail;
+                __pattern1 = __fail: 
+                  if _1.__tag == "Right"
+                    then 
+                      let
+                        _2 = _1.__field0;
+                      in
+                        module."Data.Void".absurd (module."Data.Newtype".unwrap module."Prim".undefined _2)
+                    else __fail;
+                __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 143:27 - 145:47";
+              in
+                __pattern0 (__pattern1 __patternFail)
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 141:20 - 145:47";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  coproduct10 = a: b: c: d: e: f: g: h: i: j: y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Left"
+          then 
+            let
+              r = y.__field0;
+            in
+              a r
+          else __fail;
+      __pattern1 = __fail: 
+        if y.__tag == "Right"
+          then 
+            let
+              _1 = y.__field0;
+            in
+              
+              let
+                __pattern0 = __fail: 
+                  if _1.__tag == "Left"
+                    then 
+                      let
+                        r = _1.__field0;
+                      in
+                        b r
+                    else __fail;
+                __pattern1 = __fail: 
+                  if _1.__tag == "Right"
+                    then 
+                      let
+                        _2 = _1.__field0;
+                      in
+                        
+                        let
+                          __pattern0 = __fail: 
+                            if _2.__tag == "Left"
+                              then 
+                                let
+                                  r = _2.__field0;
+                                in
+                                  c r
+                              else __fail;
+                          __pattern1 = __fail: 
+                            if _2.__tag == "Right"
+                              then 
+                                let
+                                  _3 = _2.__field0;
+                                in
+                                  
+                                  let
+                                    __pattern0 = __fail: 
+                                      if _3.__tag == "Left"
+                                        then 
+                                          let
+                                            r = _3.__field0;
+                                          in
+                                            d r
+                                        else __fail;
+                                    __pattern1 = __fail: 
+                                      if _3.__tag == "Right"
+                                        then 
+                                          let
+                                            _4 = _3.__field0;
+                                          in
+                                            
+                                            let
+                                              __pattern0 = __fail: 
+                                                if _4.__tag == "Left"
+                                                  then 
+                                                    let
+                                                      r = _4.__field0;
+                                                    in
+                                                      e r
+                                                  else __fail;
+                                              __pattern1 = __fail: 
+                                                if _4.__tag == "Right"
+                                                  then 
+                                                    let
+                                                      _5 = _4.__field0;
+                                                    in
+                                                      
+                                                      let
+                                                        __pattern0 = __fail: 
+                                                          if _5.__tag == "Left"
+                                                            then 
+                                                              let
+                                                                r = _5.__field0;
+                                                              in
+                                                                f r
+                                                            else __fail;
+                                                        __pattern1 = __fail: 
+                                                          if _5.__tag == "Right"
+                                                            then 
+                                                              let
+                                                                _6 = _5.__field0;
+                                                              in
+                                                                
+                                                                let
+                                                                  __pattern0 = __fail: 
+                                                                    if _6.__tag == "Left"
+                                                                      then 
+                                                                        let
+                                                                          r = _6.__field0;
+                                                                        in
+                                                                          g r
+                                                                      else __fail;
+                                                                  __pattern1 = __fail: 
+                                                                    if _6.__tag == "Right"
+                                                                      then 
+                                                                        let
+                                                                          _7 = _6.__field0;
+                                                                        in
+                                                                          
+                                                                          let
+                                                                            __pattern0 = __fail: 
+                                                                              if _7.__tag == "Left"
+                                                                                then 
+                                                                                  let
+                                                                                    r = _7.__field0;
+                                                                                  in
+                                                                                    h r
+                                                                                else __fail;
+                                                                            __pattern1 = __fail: 
+                                                                              if _7.__tag == "Right"
+                                                                                then 
+                                                                                  let
+                                                                                    _8 = _7.__field0;
+                                                                                  in
+                                                                                    
+                                                                                    let
+                                                                                      __pattern0 = __fail: 
+                                                                                        if _8.__tag == "Left"
+                                                                                          then 
+                                                                                            let
+                                                                                              r = _8.__field0;
+                                                                                            in
+                                                                                              i r
+                                                                                          else __fail;
+                                                                                      __pattern1 = __fail: 
+                                                                                        if _8.__tag == "Right"
+                                                                                          then 
+                                                                                            let
+                                                                                              _9 = _8.__field0;
+                                                                                            in
+                                                                                              
+                                                                                              let
+                                                                                                __pattern0 = __fail: 
+                                                                                                  if _9.__tag == "Left"
+                                                                                                    then 
+                                                                                                      let
+                                                                                                        r = _9.__field0;
+                                                                                                      in
+                                                                                                        j r
+                                                                                                    else __fail;
+                                                                                                __pattern1 = __fail: 
+                                                                                                  if _9.__tag == "Right"
+                                                                                                    then 
+                                                                                                      let
+                                                                                                        _10 = _9.__field0;
+                                                                                                      in
+                                                                                                        module."Data.Void".absurd (module."Data.Newtype".unwrap module."Prim".undefined _10)
+                                                                                                    else __fail;
+                                                                                                __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 271:43 - 273:65";
+                                                                                              in
+                                                                                                __pattern0 (__pattern1 __patternFail)
+                                                                                          else __fail;
+                                                                                      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 269:41 - 273:65";
+                                                                                    in
+                                                                                      __pattern0 (__pattern1 __patternFail)
+                                                                                else __fail;
+                                                                            __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 267:39 - 273:65";
+                                                                          in
+                                                                            __pattern0 (__pattern1 __patternFail)
+                                                                      else __fail;
+                                                                  __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 265:37 - 273:65";
+                                                                in
+                                                                  __pattern0 (__pattern1 __patternFail)
+                                                            else __fail;
+                                                        __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 263:35 - 273:65";
+                                                      in
+                                                        __pattern0 (__pattern1 __patternFail)
+                                                  else __fail;
+                                              __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 261:33 - 273:65";
+                                            in
+                                              __pattern0 (__pattern1 __patternFail)
+                                        else __fail;
+                                    __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 259:31 - 273:65";
+                                  in
+                                    __pattern0 (__pattern1 __patternFail)
+                              else __fail;
+                          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 257:29 - 273:65";
+                        in
+                          __pattern0 (__pattern1 __patternFail)
+                    else __fail;
+                __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 255:27 - 273:65";
+              in
+                __pattern0 (__pattern1 __patternFail)
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 253:37 - 273:65";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  coproduct1 = y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Left"
+          then 
+            let
+              r = y.__field0;
+            in
+              r
+          else __fail;
+      __pattern1 = __fail: 
+        if y.__tag == "Right"
+          then 
+            let
+              _1 = y.__field0;
+            in
+              module."Data.Void".absurd (module."Data.Newtype".unwrap module."Prim".undefined _1)
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 136:16 - 138:45";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  at9 = b: f: y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Right" && y.__field0.__tag == "Right" && y.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Left"
+          then 
+            let
+              r = y.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0;
+            in
+              f r
+          else __fail;
+      __pattern1 = __fail: b;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 126:13 - 128:9";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  at8 = b: f: y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Right" && y.__field0.__tag == "Right" && y.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Left"
+          then 
+            let
+              r = y.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0;
+            in
+              f r
+          else __fail;
+      __pattern1 = __fail: b;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 121:13 - 123:9";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  at7 = b: f: y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Right" && y.__field0.__tag == "Right" && y.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Left"
+          then 
+            let
+              r = y.__field0.__field0.__field0.__field0.__field0.__field0.__field0;
+            in
+              f r
+          else __fail;
+      __pattern1 = __fail: b;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 116:13 - 118:9";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  at6 = b: f: y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Right" && y.__field0.__tag == "Right" && y.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__field0.__tag == "Left"
+          then 
+            let
+              r = y.__field0.__field0.__field0.__field0.__field0.__field0;
+            in
+              f r
+          else __fail;
+      __pattern1 = __fail: b;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 111:13 - 113:9";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  at5 = b: f: y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Right" && y.__field0.__tag == "Right" && y.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__tag == "Left"
+          then 
+            let
+              r = y.__field0.__field0.__field0.__field0.__field0;
+            in
+              f r
+          else __fail;
+      __pattern1 = __fail: b;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 106:13 - 108:9";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  at4 = b: f: y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Right" && y.__field0.__tag == "Right" && y.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__tag == "Left"
+          then 
+            let
+              r = y.__field0.__field0.__field0.__field0;
+            in
+              f r
+          else __fail;
+      __pattern1 = __fail: b;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 101:13 - 103:9";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  at3 = b: f: y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Right" && y.__field0.__tag == "Right" && y.__field0.__field0.__tag == "Left"
+          then 
+            let
+              r = y.__field0.__field0.__field0;
+            in
+              f r
+          else __fail;
+      __pattern1 = __fail: b;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 96:13 - 98:9";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  at2 = b: f: y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Right" && y.__field0.__tag == "Left"
+          then 
+            let
+              r = y.__field0.__field0;
+            in
+              f r
+          else __fail;
+      __pattern1 = __fail: b;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 91:13 - 93:9";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  at10 = b: f: y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Right" && y.__field0.__tag == "Right" && y.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Right" && y.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Left"
+          then 
+            let
+              r = y.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0;
+            in
+              f r
+          else __fail;
+      __pattern1 = __fail: b;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 131:14 - 133:9";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  at1 = b: f: y: 
+    let
+      __pattern0 = __fail: 
+        if y.__tag == "Left"
+          then 
+            let
+              r = y.__field0;
+            in
+              f r
+          else __fail;
+      __pattern1 = __fail: b;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct/Nested.purs at 86:13 - 88:9";
+    in
+      __pattern0 (__pattern1 __patternFail);
+in
+  {inherit in1 in2 in3 in4 in5 in6 in7 in8 in9 in10 at1 at2 at3 at4 at5 at6 at7 at8 at9 at10 coproduct1 coproduct2 coproduct3 coproduct4 coproduct5 coproduct6 coproduct7 coproduct8 coproduct9 coproduct10;}
+;
+
+LocalDependency-Data-Functor-Coproduct_default-nix = 
+let
+  module = 
+    { "Control.Semigroupoid" = Control-Semigroupoid_default-nix;
+      "Data.Eq" = Data-Eq_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.Newtype" = Data-Newtype_default-nix;
+      "Data.Ord" = Data-Ord_default-nix;
+      "Data.Ordering" = Data-Ordering_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+      "Data.Show" = Data-Show_default-nix;
+      "LocalDependency.Control.Comonad" = LocalDependency-Control-Comonad_default-nix;
+      "LocalDependency.Control.Extend" = LocalDependency-Control-Extend_default-nix;
+      "LocalDependency.Data.Bifunctor" = LocalDependency-Data-Bifunctor_default-nix;
+      "LocalDependency.Data.Either" = LocalDependency-Data-Either_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  Coproduct = x: x;
+  showCoproduct = dictShow: dictShow1: 
+    { show = v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Left"
+              then 
+                let
+                  fa = v.__field0;
+                in
+                  module."Data.Semigroup".append module."Data.Semigroup".semigroupString "(left " (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Show".show dictShow fa) ")")
+              else __fail;
+          __pattern1 = __fail: 
+            if v.__tag == "Right"
+              then 
+                let
+                  ga = v.__field0;
+                in
+                  module."Data.Semigroup".append module."Data.Semigroup".semigroupString "(right " (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Show".show dictShow1 ga) ")")
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct.purs at 63:1 - 65:60";
+        in
+          __pattern0 (__pattern1 __patternFail);
+    };
+  right = ga: module."LocalDependency.Data.Either".Right ga;
+  newtypeCoproduct = {"Coercible0" = __unused: module."Prim".undefined;};
+  left = fa: module."LocalDependency.Data.Either".Left fa;
+  functorCoproduct = dictFunctor: dictFunctor1: 
+    { map = f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              e = v;
+            in
+              module."LocalDependency.Data.Bifunctor".bimap module."LocalDependency.Data.Bifunctor".bifunctorEither (module."Data.Functor".map dictFunctor f1) (module."Data.Functor".map dictFunctor1 f1) e;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct.purs at 67:1 - 68:60";
+        in
+          __pattern0 __patternFail;
+    };
+  eq1Coproduct = dictEq1: dictEq11: 
+    { eq1 = dictEq: v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              x = v;
+              y = v1;
+            in
+              
+              let
+                __pattern0 = __fail: 
+                  if x.__tag == "Left" && y.__tag == "Left"
+                    then 
+                      let
+                        fa = x.__field0;
+                        ga = y.__field0;
+                      in
+                        module."Data.Eq".eq1 dictEq1 dictEq fa ga
+                    else __fail;
+                __pattern1 = __fail: 
+                  if x.__tag == "Right" && y.__tag == "Right"
+                    then 
+                      let
+                        fa = x.__field0;
+                        ga = y.__field0;
+                      in
+                        module."Data.Eq".eq1 dictEq11 dictEq fa ga
+                    else __fail;
+                __pattern2 = __fail: false;
+                __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct.purs at 47:5 - 50:20";
+              in
+                __pattern0 (__pattern1 (__pattern2 __patternFail));
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct.purs at 45:1 - 50:20";
+        in
+          __pattern0 __patternFail;
+    };
+  eqCoproduct = dictEq1: dictEq11: dictEq: {eq = module."Data.Eq".eq1 (eq1Coproduct dictEq1 dictEq11) dictEq;};
+  ord1Coproduct = dictOrd1: dictOrd11: 
+    { compare1 = dictOrd: v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              x = v;
+              y = v1;
+            in
+              
+              let
+                __pattern0 = __fail: 
+                  if x.__tag == "Left" && y.__tag == "Left"
+                    then 
+                      let
+                        fa = x.__field0;
+                        ga = y.__field0;
+                      in
+                        module."Data.Ord".compare1 dictOrd1 dictOrd fa ga
+                    else __fail;
+                __pattern1 = __fail: if x.__tag == "Left" then module."Data.Ordering".LT else __fail;
+                __pattern2 = __fail: if y.__tag == "Left" then module."Data.Ordering".GT else __fail;
+                __pattern3 = __fail: 
+                  if x.__tag == "Right" && y.__tag == "Right"
+                    then 
+                      let
+                        fa = x.__field0;
+                        ga = y.__field0;
+                      in
+                        module."Data.Ord".compare1 dictOrd11 dictOrd fa ga
+                    else __fail;
+                __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct.purs at 57:5 - 61:43";
+              in
+                __pattern0 (__pattern1 (__pattern2 (__pattern3 __patternFail)));
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct.purs at 55:1 - 61:43";
+        in
+          __pattern0 __patternFail;
+      "Eq10" = __unused: eq1Coproduct (dictOrd1."Eq10" module."Prim".undefined) (dictOrd11."Eq10" module."Prim".undefined);
+    };
+  ordCoproduct = dictOrd1: dictOrd11: dictOrd: 
+    { compare = module."Data.Ord".compare1 (ord1Coproduct dictOrd1 dictOrd11) dictOrd;
+      "Eq0" = __unused: eqCoproduct (dictOrd1."Eq10" module."Prim".undefined) (dictOrd11."Eq10" module."Prim".undefined) (dictOrd."Eq0" module."Prim".undefined);
+    };
+  coproduct = v: v1: v2: 
+    let
+      __pattern0 = __fail: 
+        if v2.__tag == "Left"
+          then 
+            let
+              f = v;
+              a = v2.__field0;
+            in
+              f a
+          else __fail;
+      __pattern1 = __fail: 
+        if v2.__tag == "Right"
+          then 
+            let
+              g = v1;
+              b = v2.__field0;
+            in
+              g b
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct.purs at 27:1 - 27:78";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  extendCoproduct = dictExtend: dictExtend1: 
+    { extend = f: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn Coproduct (coproduct (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."LocalDependency.Data.Either".Left (module."LocalDependency.Control.Extend".extend dictExtend (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn f (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn Coproduct module."LocalDependency.Data.Either".Left)))) (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."LocalDependency.Data.Either".Right (module."LocalDependency.Control.Extend".extend dictExtend1 (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn f (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn Coproduct module."LocalDependency.Data.Either".Right)))));
+      "Functor0" = __unused: functorCoproduct (dictExtend."Functor0" module."Prim".undefined) (dictExtend1."Functor0" module."Prim".undefined);
+    };
+  comonadCoproduct = dictComonad: dictComonad1: 
+    { extract = coproduct (module."LocalDependency.Control.Comonad".extract dictComonad) (module."LocalDependency.Control.Comonad".extract dictComonad1);
+      "Extend0" = __unused: extendCoproduct (dictComonad."Extend0" module."Prim".undefined) (dictComonad1."Extend0" module."Prim".undefined);
+    };
+  bihoistCoproduct = natF: natG: v: 
+    let
+      __pattern0 = __fail: 
+        let
+          natF1 = natF;
+          natG1 = natG;
+          e = v;
+        in
+          module."LocalDependency.Data.Bifunctor".bimap module."LocalDependency.Data.Bifunctor".bifunctorEither natF1 natG1 e;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Coproduct.purs at 32:1 - 37:19";
+    in
+      __pattern0 __patternFail;
+in
+  {inherit Coproduct left right coproduct bihoistCoproduct newtypeCoproduct eqCoproduct eq1Coproduct ordCoproduct ord1Coproduct showCoproduct functorCoproduct extendCoproduct comonadCoproduct;}
+;
+
+LocalDependency-Data-Functor-Costar_default-nix = 
+let
+  module = 
+    { "Control.Applicative" = Control-Applicative_default-nix;
+      "Control.Apply" = Control-Apply_default-nix;
+      "Control.Bind" = Control-Bind_default-nix;
+      "Control.Category" = Control-Category_default-nix;
+      "Control.Monad" = Control-Monad_default-nix;
+      "Control.Semigroupoid" = Control-Semigroupoid_default-nix;
+      "Data.Function" = Data-Function_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.Newtype" = Data-Newtype_default-nix;
+      "LocalDependency.Control.Comonad" = LocalDependency-Control-Comonad_default-nix;
+      "LocalDependency.Control.Extend" = LocalDependency-Control-Extend_default-nix;
+      "LocalDependency.Data.Bifunctor" = LocalDependency-Data-Bifunctor_default-nix;
+      "LocalDependency.Data.Distributive" = LocalDependency-Data-Distributive_default-nix;
+      "LocalDependency.Data.Functor.Contravariant" = LocalDependency-Data-Functor-Contravariant_default-nix;
+      "LocalDependency.Data.Functor.Invariant" = LocalDependency-Data-Functor-Invariant_default-nix;
+      "LocalDependency.Data.Profunctor" = LocalDependency-Data-Profunctor_default-nix;
+      "LocalDependency.Data.Profunctor.Closed" = LocalDependency-Data-Profunctor-Closed_default-nix;
+      "LocalDependency.Data.Profunctor.Strong" = LocalDependency-Data-Profunctor-Strong_default-nix;
+      "LocalDependency.Data.Tuple" = LocalDependency-Data-Tuple_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  Costar = x: x;
+  semigroupoidCostar = dictExtend: 
+    { compose = v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              f = v;
+              g = v1;
+            in
+              module."LocalDependency.Control.Extend".composeCoKleisliFlipped dictExtend f g;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Costar.purs at 25:1 - 26:51";
+        in
+          __pattern0 __patternFail;
+    };
+  profunctorCostar = dictFunctor: 
+    { dimap = f: g: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              g1 = g;
+              h = v;
+            in
+              module."Control.Semigroupoid".composeFlipped module."Control.Semigroupoid".semigroupoidFn (module."Data.Functor".map dictFunctor f1) (module."Control.Semigroupoid".composeFlipped module."Control.Semigroupoid".semigroupoidFn h g1);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Costar.purs at 55:1 - 56:52";
+        in
+          __pattern0 __patternFail;
+    };
+  strongCostar = dictComonad: 
+    { first = v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f = v;
+            in
+              x: module."LocalDependency.Data.Tuple".Tuple (f (module."Data.Functor".map ((dictComonad."Extend0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."LocalDependency.Data.Tuple".fst x)) (module."LocalDependency.Data.Tuple".snd (module."LocalDependency.Control.Comonad".extract dictComonad x));
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Costar.purs at 58:1 - 60:75";
+        in
+          __pattern0 __patternFail;
+      second = v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f = v;
+            in
+              x: module."LocalDependency.Data.Tuple".Tuple (module."LocalDependency.Data.Tuple".fst (module."LocalDependency.Control.Comonad".extract dictComonad x)) (f (module."Data.Functor".map ((dictComonad."Extend0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."LocalDependency.Data.Tuple".snd x));
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Costar.purs at 58:1 - 60:75";
+        in
+          __pattern0 __patternFail;
+      "Profunctor0" = __unused: profunctorCostar ((dictComonad."Extend0" module."Prim".undefined)."Functor0" module."Prim".undefined);
+    };
+  newtypeCostar = {"Coercible0" = __unused: module."Prim".undefined;};
+  hoistCostar = f: v: 
+    let
+      __pattern0 = __fail: 
+        let
+          f1 = f;
+          g = v;
+        in
+          module."LocalDependency.Data.Profunctor".lcmap module."LocalDependency.Data.Profunctor".profunctorFn f1 g;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Costar.purs at 65:1 - 65:72";
+    in
+      __pattern0 __patternFail;
+  functorCostar = 
+    { map = f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              g = v;
+            in
+              module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn f1 g;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Costar.purs at 31:1 - 32:38";
+        in
+          __pattern0 __patternFail;
+    };
+  invariantCostar = {imap = module."LocalDependency.Data.Functor.Invariant".imapF functorCostar;};
+  distributiveCostar = 
+    { distribute = dictFunctor: f: a: module."Data.Functor".map dictFunctor 
+        ( v: 
+          let
+            __pattern0 = __fail: 
+              let
+                g = v;
+              in
+                g a;
+            __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Costar.purs at 49:36 - 49:54";
+          in
+            __pattern0 __patternFail
+        ) f;
+      collect = dictFunctor: f: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."LocalDependency.Data.Distributive".distribute distributiveCostar dictFunctor) (module."Data.Functor".map dictFunctor f);
+      "Functor0" = __unused: functorCostar;
+    };
+  closedCostar = dictFunctor: 
+    { closed = v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f = v;
+            in
+              g: x: f (module."Data.Functor".map dictFunctor (v1: module."Data.Function".apply v1 x) g);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Costar.purs at 62:1 - 63:55";
+        in
+          __pattern0 __patternFail;
+      "Profunctor0" = __unused: profunctorCostar dictFunctor;
+    };
+  categoryCostar = dictComonad: 
+    { identity = module."LocalDependency.Control.Comonad".extract dictComonad;
+      "Semigroupoid0" = __unused: semigroupoidCostar (dictComonad."Extend0" module."Prim".undefined);
+    };
+  bifunctorCostar = dictContravariant: 
+    { bimap = f: g: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              g1 = g;
+              h = v;
+            in
+              module."Control.Semigroupoid".composeFlipped module."Control.Semigroupoid".semigroupoidFn (module."LocalDependency.Data.Functor.Contravariant".cmap dictContravariant f1) (module."Control.Semigroupoid".composeFlipped module."Control.Semigroupoid".semigroupoidFn h g1);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Costar.purs at 52:1 - 53:53";
+        in
+          __pattern0 __patternFail;
+    };
+  applyCostar = 
+    { apply = v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              f = v;
+              g = v1;
+            in
+              a: f a (g a);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Costar.purs at 37:1 - 38:55";
+        in
+          __pattern0 __patternFail;
+      "Functor0" = __unused: functorCostar;
+    };
+  bindCostar = 
+    { bind = v: f: 
+        let
+          __pattern0 = __fail: 
+            let
+              m = v;
+              f1 = f;
+            in
+              x: 
+              let
+                v1 = f1 (m x);
+              in
+                
+                let
+                  __pattern0 = __fail: 
+                    let
+                      g = v1;
+                    in
+                      g x;
+                  __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Costar.purs at 44:36 - 44:67";
+                in
+                  __pattern0 __patternFail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Costar.purs at 43:1 - 44:67";
+        in
+          __pattern0 __patternFail;
+      "Apply0" = __unused: applyCostar;
+    };
+  applicativeCostar = 
+    { pure = a: v: a;
+      "Apply0" = __unused: applyCostar;
+    };
+  monadCostar = 
+    { "Applicative0" = __unused: applicativeCostar;
+      "Bind1" = __unused: bindCostar;
+    };
+in
+  {inherit Costar hoistCostar newtypeCostar semigroupoidCostar categoryCostar functorCostar invariantCostar applyCostar applicativeCostar bindCostar monadCostar distributiveCostar bifunctorCostar profunctorCostar strongCostar closedCostar;}
+;
+
+LocalDependency-Data-Functor-Flip_default-nix = 
+let
+  module = 
+    { "Control.Category" = Control-Category_default-nix;
+      "Control.Semigroupoid" = Control-Semigroupoid_default-nix;
+      "Data.Eq" = Data-Eq_default-nix;
+      "Data.Function" = Data-Function_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.Newtype" = Data-Newtype_default-nix;
+      "Data.Ord" = Data-Ord_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+      "Data.Show" = Data-Show_default-nix;
+      "LocalDependency.Control.Biapplicative" = LocalDependency-Control-Biapplicative_default-nix;
+      "LocalDependency.Control.Biapply" = LocalDependency-Control-Biapply_default-nix;
+      "LocalDependency.Data.Bifunctor" = LocalDependency-Data-Bifunctor_default-nix;
+      "LocalDependency.Data.Functor.Contravariant" = LocalDependency-Data-Functor-Contravariant_default-nix;
+      "LocalDependency.Data.Profunctor" = LocalDependency-Data-Profunctor_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  Flip = x: x;
+  showFlip = dictShow: 
+    { show = v: 
+        let
+          __pattern0 = __fail: 
+            let
+              x = v;
+            in
+              module."Data.Semigroup".append module."Data.Semigroup".semigroupString "(Flip " (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Show".show dictShow x) ")");
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Flip.purs at 22:1 - 23:44";
+        in
+          __pattern0 __patternFail;
+    };
+  semigroupoidFlip = dictSemigroupoid: 
+    { compose = v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              a = v;
+              b = v1;
+            in
+              module."Data.Function".apply Flip (module."Control.Semigroupoid".compose dictSemigroupoid b a);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Flip.purs at 40:1 - 41:49";
+        in
+          __pattern0 __patternFail;
+    };
+  ordFlip = dictOrd: dictOrd;
+  newtypeFlip = {"Coercible0" = __unused: module."Prim".undefined;};
+  functorFlip = dictBifunctor: 
+    { map = f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              a = v;
+            in
+              module."LocalDependency.Data.Bifunctor".lmap dictBifunctor f1 a;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Flip.purs at 25:1 - 26:35";
+        in
+          __pattern0 __patternFail;
+    };
+  eqFlip = dictEq: dictEq;
+  contravariantFlip = dictProfunctor: 
+    { cmap = f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              a = v;
+            in
+              module."LocalDependency.Data.Profunctor".lcmap dictProfunctor f1 a;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Flip.purs at 37:1 - 38:37";
+        in
+          __pattern0 __patternFail;
+    };
+  categoryFlip = dictCategory: 
+    { identity = module."Control.Category".identity dictCategory;
+      "Semigroupoid0" = __unused: semigroupoidFlip (dictCategory."Semigroupoid0" module."Prim".undefined);
+    };
+  bifunctorFlip = dictBifunctor: 
+    { bimap = f: g: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              g1 = g;
+              a = v;
+            in
+              module."LocalDependency.Data.Bifunctor".bimap dictBifunctor g1 f1 a;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Flip.purs at 28:1 - 29:42";
+        in
+          __pattern0 __patternFail;
+    };
+  biapplyFlip = dictBiapply: 
+    { biapply = v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              fg = v;
+              xy = v1;
+            in
+              module."LocalDependency.Control.Biapply".biapply dictBiapply fg xy;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Flip.purs at 31:1 - 32:51";
+        in
+          __pattern0 __patternFail;
+      "Bifunctor0" = __unused: bifunctorFlip (dictBiapply."Bifunctor0" module."Prim".undefined);
+    };
+  biapplicativeFlip = dictBiapplicative: 
+    { bipure = a: b: module."LocalDependency.Control.Biapplicative".bipure dictBiapplicative b a;
+      "Biapply0" = __unused: biapplyFlip (dictBiapplicative."Biapply0" module."Prim".undefined);
+    };
+in
+  {inherit Flip newtypeFlip eqFlip ordFlip showFlip functorFlip bifunctorFlip biapplyFlip biapplicativeFlip contravariantFlip semigroupoidFlip categoryFlip;}
+;
+
+LocalDependency-Data-Functor-Invariant_default-nix = 
+let
+  module = 
+    { "Control.Semigroupoid" = Control-Semigroupoid_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.Monoid.Additive" = Data-Monoid-Additive_default-nix;
+      "Data.Monoid.Conj" = Data-Monoid-Conj_default-nix;
+      "Data.Monoid.Disj" = Data-Monoid-Disj_default-nix;
+      "Data.Monoid.Dual" = Data-Monoid-Dual_default-nix;
+      "Data.Monoid.Endo" = Data-Monoid-Endo_default-nix;
+      "Data.Monoid.Multiplicative" = Data-Monoid-Multiplicative_default-nix;
+      "LocalDependency.Data.Monoid.Alternate" = LocalDependency-Data-Monoid-Alternate_default-nix;
+    };
+  Invariant-Dict = x: x;
+  invariantMultiplicative = 
+    { imap = f: v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              x = v1;
+            in
+              f1 x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/invariant/Data/Functor/Invariant.purs at 47:1 - 48:53";
+        in
+          __pattern0 __patternFail;
+    };
+  invariantEndo = 
+    { imap = ab: ba: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              ab1 = ab;
+              ba1 = ba;
+              f = v;
+            in
+              module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn ab1 (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn f ba1);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/invariant/Data/Functor/Invariant.purs at 44:1 - 45:47";
+        in
+          __pattern0 __patternFail;
+    };
+  invariantDual = 
+    { imap = f: v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              x = v1;
+            in
+              f1 x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/invariant/Data/Functor/Invariant.purs at 41:1 - 42:33";
+        in
+          __pattern0 __patternFail;
+    };
+  invariantDisj = 
+    { imap = f: v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              x = v1;
+            in
+              f1 x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/invariant/Data/Functor/Invariant.purs at 38:1 - 39:33";
+        in
+          __pattern0 __patternFail;
+    };
+  invariantConj = 
+    { imap = f: v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              x = v1;
+            in
+              f1 x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/invariant/Data/Functor/Invariant.purs at 35:1 - 36:33";
+        in
+          __pattern0 __patternFail;
+    };
+  invariantAdditive = 
+    { imap = f: v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              x = v1;
+            in
+              f1 x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/invariant/Data/Functor/Invariant.purs at 32:1 - 33:41";
+        in
+          __pattern0 __patternFail;
+    };
+  imapF = dictFunctor: f: v: module."Data.Functor".map dictFunctor f;
+  invariantArray = {imap = imapF module."Data.Functor".functorArray;};
+  invariantFn = {imap = imapF module."Data.Functor".functorFn;};
+  imap = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.imap;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/invariant/Data/Functor/Invariant.purs at 24:3 - 24:57";
+    in
+      __pattern0 __patternFail;
+  invariantAlternate = dictInvariant: 
+    { imap = f: g: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              g1 = g;
+              x = v;
+            in
+              imap dictInvariant f1 g1 x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/invariant/Data/Functor/Invariant.purs at 50:1 - 51:50";
+        in
+          __pattern0 __patternFail;
+    };
+in
+  {inherit imap imapF invariantFn invariantArray invariantAdditive invariantConj invariantDisj invariantDual invariantEndo invariantMultiplicative invariantAlternate;}
+;
+
+LocalDependency-Data-Functor-Joker_default-nix = 
+let
+  module = 
+    { "Control.Applicative" = Control-Applicative_default-nix;
+      "Control.Apply" = Control-Apply_default-nix;
+      "Control.Bind" = Control-Bind_default-nix;
+      "Control.Monad" = Control-Monad_default-nix;
+      "Control.Semigroupoid" = Control-Semigroupoid_default-nix;
+      "Data.Eq" = Data-Eq_default-nix;
+      "Data.Function" = Data-Function_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.Newtype" = Data-Newtype_default-nix;
+      "Data.Ord" = Data-Ord_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+      "Data.Show" = Data-Show_default-nix;
+      "LocalDependency.Control.Biapplicative" = LocalDependency-Control-Biapplicative_default-nix;
+      "LocalDependency.Control.Biapply" = LocalDependency-Control-Biapply_default-nix;
+      "LocalDependency.Data.Bifunctor" = LocalDependency-Data-Bifunctor_default-nix;
+      "LocalDependency.Data.Either" = LocalDependency-Data-Either_default-nix;
+      "LocalDependency.Data.Profunctor" = LocalDependency-Data-Profunctor_default-nix;
+      "LocalDependency.Data.Profunctor.Choice" = LocalDependency-Data-Profunctor-Choice_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  Joker = x: x;
+  showJoker = dictShow: 
+    { show = v: 
+        let
+          __pattern0 = __fail: 
+            let
+              x = v;
+            in
+              module."Data.Semigroup".append module."Data.Semigroup".semigroupString "(Joker " (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Show".show dictShow x) ")");
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Joker.purs at 26:1 - 27:46";
+        in
+          __pattern0 __patternFail;
+    };
+  profunctorJoker = dictFunctor: 
+    { dimap = v: g: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              g1 = g;
+              a = v1;
+            in
+              module."Data.Functor".map dictFunctor g1 a;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Joker.purs at 52:1 - 53:40";
+        in
+          __pattern0 __patternFail;
+    };
+  ordJoker = dictOrd: dictOrd;
+  newtypeJoker = {"Coercible0" = __unused: module."Prim".undefined;};
+  hoistJoker = f: v: 
+    let
+      __pattern0 = __fail: 
+        let
+          f1 = f;
+          a = v;
+        in
+          f1 a;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Joker.purs at 59:1 - 59:69";
+    in
+      __pattern0 __patternFail;
+  functorJoker = dictFunctor: 
+    { map = f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              a = v;
+            in
+              module."Data.Functor".map dictFunctor f1 a;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Joker.purs at 29:1 - 30:36";
+        in
+          __pattern0 __patternFail;
+    };
+  eqJoker = dictEq: dictEq;
+  choiceJoker = dictFunctor: 
+    { left = v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f = v;
+            in
+              module."Data.Function".apply Joker (module."Data.Functor".map dictFunctor module."LocalDependency.Data.Either".Left f);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Joker.purs at 55:1 - 57:40";
+        in
+          __pattern0 __patternFail;
+      right = v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f = v;
+            in
+              module."Data.Function".apply Joker (module."Data.Functor".map dictFunctor module."LocalDependency.Data.Either".Right f);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Joker.purs at 55:1 - 57:40";
+        in
+          __pattern0 __patternFail;
+      "Profunctor0" = __unused: profunctorJoker dictFunctor;
+    };
+  bifunctorJoker = dictFunctor: 
+    { bimap = v: g: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              g1 = g;
+              a = v1;
+            in
+              module."Data.Functor".map dictFunctor g1 a;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Joker.purs at 43:1 - 44:40";
+        in
+          __pattern0 __patternFail;
+    };
+  biapplyJoker = dictApply: 
+    { biapply = v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              fg = v;
+              xy = v1;
+            in
+              module."Control.Apply".apply dictApply fg xy;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Joker.purs at 46:1 - 47:52";
+        in
+          __pattern0 __patternFail;
+      "Bifunctor0" = __unused: bifunctorJoker (dictApply."Functor0" module."Prim".undefined);
+    };
+  biapplicativeJoker = dictApplicative: 
+    { bipure = v: b: module."Control.Applicative".pure dictApplicative b;
+      "Biapply0" = __unused: biapplyJoker (dictApplicative."Apply0" module."Prim".undefined);
+    };
+  applyJoker = dictApply: 
+    { apply = v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              f = v;
+              g = v1;
+            in
+              module."Data.Function".apply Joker (module."Control.Apply".apply dictApply f g);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Joker.purs at 32:1 - 33:48";
+        in
+          __pattern0 __patternFail;
+      "Functor0" = __unused: functorJoker (dictApply."Functor0" module."Prim".undefined);
+    };
+  bindJoker = dictBind: 
+    { bind = v: amb: 
+        let
+          __pattern0 = __fail: 
+            let
+              ma = v;
+              amb1 = amb;
+            in
+              module."Data.Function".apply Joker (module."Control.Bind".bind dictBind ma (module."Control.Semigroupoid".composeFlipped module."Control.Semigroupoid".semigroupoidFn amb1 (module."Data.Newtype".un module."Prim".undefined Joker)));
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Joker.purs at 38:1 - 39:58";
+        in
+          __pattern0 __patternFail;
+      "Apply0" = __unused: applyJoker (dictBind."Apply0" module."Prim".undefined);
+    };
+  applicativeJoker = dictApplicative: 
+    { pure = module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn Joker (module."Control.Applicative".pure dictApplicative);
+      "Apply0" = __unused: applyJoker (dictApplicative."Apply0" module."Prim".undefined);
+    };
+  monadJoker = dictMonad: 
+    { "Applicative0" = __unused: applicativeJoker (dictMonad."Applicative0" module."Prim".undefined);
+      "Bind1" = __unused: bindJoker (dictMonad."Bind1" module."Prim".undefined);
+    };
+in
+  {inherit Joker hoistJoker newtypeJoker eqJoker ordJoker showJoker functorJoker applyJoker applicativeJoker bindJoker monadJoker bifunctorJoker biapplyJoker biapplicativeJoker profunctorJoker choiceJoker;}
+;
+
+LocalDependency-Data-Functor-Product-Nested_default-nix = 
+let
+  module = 
+    { "Data.Unit" = Data-Unit_default-nix;
+      "LocalDependency.Data.Const" = LocalDependency-Data-Const_default-nix;
+      "LocalDependency.Data.Functor.Product" = LocalDependency-Data-Functor-Product_default-nix;
+      "LocalDependency.Data.Tuple" = LocalDependency-Data-Tuple_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  product9 = a: b: c: d: e: f: g: h: i: module."LocalDependency.Data.Functor.Product".product a (module."LocalDependency.Data.Functor.Product".product b (module."LocalDependency.Data.Functor.Product".product c (module."LocalDependency.Data.Functor.Product".product d (module."LocalDependency.Data.Functor.Product".product e (module."LocalDependency.Data.Functor.Product".product f (module."LocalDependency.Data.Functor.Product".product g (module."LocalDependency.Data.Functor.Product".product h (module."LocalDependency.Data.Functor.Product".product i module."Data.Unit".unit))))))));
+  product8 = a: b: c: d: e: f: g: h: module."LocalDependency.Data.Functor.Product".product a (module."LocalDependency.Data.Functor.Product".product b (module."LocalDependency.Data.Functor.Product".product c (module."LocalDependency.Data.Functor.Product".product d (module."LocalDependency.Data.Functor.Product".product e (module."LocalDependency.Data.Functor.Product".product f (module."LocalDependency.Data.Functor.Product".product g (module."LocalDependency.Data.Functor.Product".product h module."Data.Unit".unit)))))));
+  product7 = a: b: c: d: e: f: g: module."LocalDependency.Data.Functor.Product".product a (module."LocalDependency.Data.Functor.Product".product b (module."LocalDependency.Data.Functor.Product".product c (module."LocalDependency.Data.Functor.Product".product d (module."LocalDependency.Data.Functor.Product".product e (module."LocalDependency.Data.Functor.Product".product f (module."LocalDependency.Data.Functor.Product".product g module."Data.Unit".unit))))));
+  product6 = a: b: c: d: e: f: module."LocalDependency.Data.Functor.Product".product a (module."LocalDependency.Data.Functor.Product".product b (module."LocalDependency.Data.Functor.Product".product c (module."LocalDependency.Data.Functor.Product".product d (module."LocalDependency.Data.Functor.Product".product e (module."LocalDependency.Data.Functor.Product".product f module."Data.Unit".unit)))));
+  product5 = a: b: c: d: e: module."LocalDependency.Data.Functor.Product".product a (module."LocalDependency.Data.Functor.Product".product b (module."LocalDependency.Data.Functor.Product".product c (module."LocalDependency.Data.Functor.Product".product d (module."LocalDependency.Data.Functor.Product".product e module."Data.Unit".unit))));
+  product4 = a: b: c: d: module."LocalDependency.Data.Functor.Product".product a (module."LocalDependency.Data.Functor.Product".product b (module."LocalDependency.Data.Functor.Product".product c (module."LocalDependency.Data.Functor.Product".product d module."Data.Unit".unit)));
+  product3 = a: b: c: module."LocalDependency.Data.Functor.Product".product a (module."LocalDependency.Data.Functor.Product".product b (module."LocalDependency.Data.Functor.Product".product c module."Data.Unit".unit));
+  product2 = a: b: module."LocalDependency.Data.Functor.Product".product a (module."LocalDependency.Data.Functor.Product".product b module."Data.Unit".unit);
+  product10 = a: b: c: d: e: f: g: h: i: j: module."LocalDependency.Data.Functor.Product".product a (module."LocalDependency.Data.Functor.Product".product b (module."LocalDependency.Data.Functor.Product".product c (module."LocalDependency.Data.Functor.Product".product d (module."LocalDependency.Data.Functor.Product".product e (module."LocalDependency.Data.Functor.Product".product f (module."LocalDependency.Data.Functor.Product".product g (module."LocalDependency.Data.Functor.Product".product h (module."LocalDependency.Data.Functor.Product".product i (module."LocalDependency.Data.Functor.Product".product j module."Data.Unit".unit)))))))));
+  product1 = a: module."LocalDependency.Data.Functor.Product".product a module."Data.Unit".unit;
+  get9 = v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple" && v.__field1.__tag == "Tuple" && v.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple"
+          then 
+            let
+              i = v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field0;
+            in
+              i
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Product/Nested.purs at 108:1 - 108:65";
+    in
+      __pattern0 __patternFail;
+  get8 = v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple" && v.__field1.__tag == "Tuple" && v.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple"
+          then 
+            let
+              h = v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field0;
+            in
+              h
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Product/Nested.purs at 105:1 - 105:60";
+    in
+      __pattern0 __patternFail;
+  get7 = v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple" && v.__field1.__tag == "Tuple" && v.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple"
+          then 
+            let
+              g = v.__field1.__field1.__field1.__field1.__field1.__field1.__field0;
+            in
+              g
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Product/Nested.purs at 102:1 - 102:56";
+    in
+      __pattern0 __patternFail;
+  get6 = v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple" && v.__field1.__tag == "Tuple" && v.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple"
+          then 
+            let
+              f = v.__field1.__field1.__field1.__field1.__field1.__field0;
+            in
+              f
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Product/Nested.purs at 99:1 - 99:52";
+    in
+      __pattern0 __patternFail;
+  get5 = v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple" && v.__field1.__tag == "Tuple" && v.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__tag == "Tuple"
+          then 
+            let
+              e = v.__field1.__field1.__field1.__field1.__field0;
+            in
+              e
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Product/Nested.purs at 96:1 - 96:48";
+    in
+      __pattern0 __patternFail;
+  get4 = v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple" && v.__field1.__tag == "Tuple" && v.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__tag == "Tuple"
+          then 
+            let
+              d = v.__field1.__field1.__field1.__field0;
+            in
+              d
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Product/Nested.purs at 93:1 - 93:44";
+    in
+      __pattern0 __patternFail;
+  get3 = v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple" && v.__field1.__tag == "Tuple" && v.__field1.__field1.__tag == "Tuple"
+          then 
+            let
+              c = v.__field1.__field1.__field0;
+            in
+              c
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Product/Nested.purs at 90:1 - 90:40";
+    in
+      __pattern0 __patternFail;
+  get2 = v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple" && v.__field1.__tag == "Tuple"
+          then 
+            let
+              b = v.__field1.__field0;
+            in
+              b
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Product/Nested.purs at 87:1 - 87:36";
+    in
+      __pattern0 __patternFail;
+  get10 = v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple" && v.__field1.__tag == "Tuple" && v.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple"
+          then 
+            let
+              j = v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field0;
+            in
+              j
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Product/Nested.purs at 111:1 - 111:70";
+    in
+      __pattern0 __patternFail;
+  get1 = v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple"
+          then 
+            let
+              a = v.__field0;
+            in
+              a
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Product/Nested.purs at 84:1 - 84:32";
+    in
+      __pattern0 __patternFail;
+in
+  {inherit product1 product2 product3 product4 product5 product6 product7 product8 product9 product10 get1 get2 get3 get4 get5 get6 get7 get8 get9 get10;}
+;
+
+LocalDependency-Data-Functor-Product_default-nix = 
+let
+  module = 
+    { "Control.Applicative" = Control-Applicative_default-nix;
+      "Control.Apply" = Control-Apply_default-nix;
+      "Control.Bind" = Control-Bind_default-nix;
+      "Control.Monad" = Control-Monad_default-nix;
+      "Control.Semigroupoid" = Control-Semigroupoid_default-nix;
+      "Data.Eq" = Data-Eq_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.HeytingAlgebra" = Data-HeytingAlgebra_default-nix;
+      "Data.Newtype" = Data-Newtype_default-nix;
+      "Data.Ord" = Data-Ord_default-nix;
+      "Data.Ordering" = Data-Ordering_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+      "Data.Show" = Data-Show_default-nix;
+      "LocalDependency.Data.Bifunctor" = LocalDependency-Data-Bifunctor_default-nix;
+      "LocalDependency.Data.Tuple" = LocalDependency-Data-Tuple_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  Product = x: x;
+  showProduct = dictShow: dictShow1: 
+    { show = v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple"
+              then 
+                let
+                  fa = v.__field0;
+                  ga = v.__field1;
+                in
+                  module."Data.Semigroup".append module."Data.Semigroup".semigroupString "(product " (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Show".show dictShow fa) (module."Data.Semigroup".append module."Data.Semigroup".semigroupString " " (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Show".show dictShow1 ga) ")")))
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Product.purs at 44:1 - 45:81";
+        in
+          __pattern0 __patternFail;
+    };
+  product = fa: ga: module."LocalDependency.Data.Tuple".Tuple fa ga;
+  newtypeProduct = {"Coercible0" = __unused: module."Prim".undefined;};
+  functorProduct = dictFunctor: dictFunctor1: 
+    { map = f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              fga = v;
+            in
+              module."LocalDependency.Data.Bifunctor".bimap module."LocalDependency.Data.Bifunctor".bifunctorTuple (module."Data.Functor".map dictFunctor f1) (module."Data.Functor".map dictFunctor1 f1) fga;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Product.purs at 47:1 - 48:60";
+        in
+          __pattern0 __patternFail;
+    };
+  eq1Product = dictEq1: dictEq11: 
+    { eq1 = dictEq: v: v1: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple" && v1.__tag == "Tuple"
+              then 
+                let
+                  l1 = v.__field0;
+                  r1 = v.__field1;
+                  l2 = v1.__field0;
+                  r2 = v1.__field1;
+                in
+                  module."Data.HeytingAlgebra".conj module."Data.HeytingAlgebra".heytingAlgebraBoolean (module."Data.Eq".eq1 dictEq1 dictEq l1 l2) (module."Data.Eq".eq1 dictEq11 dictEq r1 r2)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Product.purs at 32:1 - 33:79";
+        in
+          __pattern0 __patternFail;
+    };
+  eqProduct = dictEq1: dictEq11: dictEq: {eq = module."Data.Eq".eq1 (eq1Product dictEq1 dictEq11) dictEq;};
+  ord1Product = dictOrd1: dictOrd11: 
+    { compare1 = dictOrd: v: v1: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple" && v1.__tag == "Tuple"
+              then 
+                let
+                  l1 = v.__field0;
+                  r1 = v.__field1;
+                  l2 = v1.__field0;
+                  r2 = v1.__field1;
+                in
+                  
+                  let
+                    v2 = module."Data.Ord".compare1 dictOrd1 dictOrd l1 l2;
+                  in
+                    
+                    let
+                      __pattern0 = __fail: if v2.__tag == "EQ" then module."Data.Ord".compare1 dictOrd11 dictOrd r1 r2 else __fail;
+                      __pattern1 = __fail: 
+                        let
+                          o = v2;
+                        in
+                          o;
+                      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Product.purs at 40:5 - 42:13";
+                    in
+                      __pattern0 (__pattern1 __patternFail)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Product.purs at 38:1 - 42:13";
+        in
+          __pattern0 __patternFail;
+      "Eq10" = __unused: eq1Product (dictOrd1."Eq10" module."Prim".undefined) (dictOrd11."Eq10" module."Prim".undefined);
+    };
+  ordProduct = dictOrd1: dictOrd11: dictOrd: 
+    { compare = module."Data.Ord".compare1 (ord1Product dictOrd1 dictOrd11) dictOrd;
+      "Eq0" = __unused: eqProduct (dictOrd1."Eq10" module."Prim".undefined) (dictOrd11."Eq10" module."Prim".undefined) (dictOrd."Eq0" module."Prim".undefined);
+    };
+  bihoistProduct = natF: natG: v: 
+    let
+      __pattern0 = __fail: 
+        let
+          natF1 = natF;
+          natG1 = natG;
+          e = v;
+        in
+          module."LocalDependency.Data.Bifunctor".bimap module."LocalDependency.Data.Bifunctor".bifunctorTuple natF1 natG1 e;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Product.purs at 19:1 - 24:17";
+    in
+      __pattern0 __patternFail;
+  applyProduct = dictApply: dictApply1: 
+    { apply = v: v1: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple" && v1.__tag == "Tuple"
+              then 
+                let
+                  f = v.__field0;
+                  g = v.__field1;
+                  a = v1.__field0;
+                  b = v1.__field1;
+                in
+                  product (module."Control.Apply".apply dictApply f a) (module."Control.Apply".apply dictApply1 g b)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Product.purs at 50:1 - 51:86";
+        in
+          __pattern0 __patternFail;
+      "Functor0" = __unused: functorProduct (dictApply."Functor0" module."Prim".undefined) (dictApply1."Functor0" module."Prim".undefined);
+    };
+  bindProduct = dictBind: dictBind1: 
+    { bind = v: f: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple"
+              then 
+                let
+                  fa = v.__field0;
+                  ga = v.__field1;
+                  f1 = f;
+                in
+                  product (module."Control.Bind".bind dictBind fa (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."LocalDependency.Data.Tuple".fst (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Data.Newtype".unwrap module."Prim".undefined) f1))) (module."Control.Bind".bind dictBind1 ga (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."LocalDependency.Data.Tuple".snd (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Data.Newtype".unwrap module."Prim".undefined) f1)))
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Product.purs at 56:1 - 58:72";
+        in
+          __pattern0 __patternFail;
+      "Apply0" = __unused: applyProduct (dictBind."Apply0" module."Prim".undefined) (dictBind1."Apply0" module."Prim".undefined);
+    };
+  applicativeProduct = dictApplicative: dictApplicative1: 
+    { pure = a: product (module."Control.Applicative".pure dictApplicative a) (module."Control.Applicative".pure dictApplicative1 a);
+      "Apply0" = __unused: applyProduct (dictApplicative."Apply0" module."Prim".undefined) (dictApplicative1."Apply0" module."Prim".undefined);
+    };
+  monadProduct = dictMonad: dictMonad1: 
+    { "Applicative0" = __unused: applicativeProduct (dictMonad."Applicative0" module."Prim".undefined) (dictMonad1."Applicative0" module."Prim".undefined);
+      "Bind1" = __unused: bindProduct (dictMonad."Bind1" module."Prim".undefined) (dictMonad1."Bind1" module."Prim".undefined);
+    };
+in
+  {inherit Product product bihoistProduct newtypeProduct eqProduct eq1Product ordProduct ord1Product showProduct functorProduct applyProduct applicativeProduct bindProduct monadProduct;}
+;
+
+LocalDependency-Data-Functor-Product2_default-nix = 
+let
+  module = 
+    { "Data.Eq" = Data-Eq_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.HeytingAlgebra" = Data-HeytingAlgebra_default-nix;
+      "Data.Ord" = Data-Ord_default-nix;
+      "Data.Ordering" = Data-Ordering_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+      "Data.Show" = Data-Show_default-nix;
+      "LocalDependency.Control.Biapplicative" = LocalDependency-Control-Biapplicative_default-nix;
+      "LocalDependency.Control.Biapply" = LocalDependency-Control-Biapply_default-nix;
+      "LocalDependency.Data.Bifunctor" = LocalDependency-Data-Bifunctor_default-nix;
+      "LocalDependency.Data.Profunctor" = LocalDependency-Data-Profunctor_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  Product2 = value0: value1: 
+    { __tag = "Product2";
+      __field0 = value0;
+      __field1 = value1;
+    };
+  showProduct2 = dictShow: dictShow1: 
+    { show = v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Product2"
+              then 
+                let
+                  x = v.__field0;
+                  y = v.__field1;
+                in
+                  module."Data.Semigroup".append module."Data.Semigroup".semigroupString "(Product2 " (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Show".show dictShow x) (module."Data.Semigroup".append module."Data.Semigroup".semigroupString " " (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Show".show dictShow1 y) ")")))
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Product2.purs at 24:1 - 25:71";
+        in
+          __pattern0 __patternFail;
+    };
+  profunctorProduct2 = dictProfunctor: dictProfunctor1: 
+    { dimap = f: g: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Product2"
+              then 
+                let
+                  f1 = f;
+                  g1 = g;
+                  x = v.__field0;
+                  y = v.__field1;
+                in
+                  Product2 (module."LocalDependency.Data.Profunctor".dimap dictProfunctor f1 g1 x) (module."LocalDependency.Data.Profunctor".dimap dictProfunctor1 f1 g1 y)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Product2.purs at 39:1 - 40:66";
+        in
+          __pattern0 __patternFail;
+    };
+  functorProduct2 = dictFunctor: dictFunctor1: 
+    { map = f: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Product2"
+              then 
+                let
+                  f1 = f;
+                  x = v.__field0;
+                  y = v.__field1;
+                in
+                  Product2 (module."Data.Functor".map dictFunctor f1 x) (module."Data.Functor".map dictFunctor1 f1 y)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Product2.purs at 27:1 - 28:54";
+        in
+          __pattern0 __patternFail;
+    };
+  eqProduct2 = dictEq: dictEq1: 
+    { eq = x: y: 
+        let
+          __pattern0 = __fail: 
+            if x.__tag == "Product2" && y.__tag == "Product2"
+              then 
+                let
+                  l = x.__field0;
+                  l1 = x.__field1;
+                  r = y.__field0;
+                  r1 = y.__field1;
+                in
+                  module."Data.HeytingAlgebra".conj module."Data.HeytingAlgebra".heytingAlgebraBoolean (module."Data.Eq".eq dictEq l r) (module."Data.Eq".eq dictEq1 l1 r1)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Product2.purs at 20:1 - 20:80";
+        in
+          __pattern0 __patternFail;
+    };
+  ordProduct2 = dictOrd: dictOrd1: 
+    { compare = x: y: 
+        let
+          __pattern0 = __fail: 
+            if x.__tag == "Product2" && y.__tag == "Product2"
+              then 
+                let
+                  l = x.__field0;
+                  l1 = x.__field1;
+                  r = y.__field0;
+                  r1 = y.__field1;
+                in
+                  
+                  let
+                    v = module."Data.Ord".compare dictOrd l r;
+                  in
+                    
+                    let
+                      __pattern0 = __fail: if v.__tag == "LT" then module."Data.Ordering".LT else __fail;
+                      __pattern1 = __fail: if v.__tag == "GT" then module."Data.Ordering".GT else __fail;
+                      __pattern2 = __fail: module."Data.Ord".compare dictOrd1 l1 r1;
+                      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Product2.purs at 22:1 - 22:84";
+                    in
+                      __pattern0 (__pattern1 (__pattern2 __patternFail))
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Product2.purs at 22:1 - 22:84";
+        in
+          __pattern0 __patternFail;
+      "Eq0" = __unused: eqProduct2 (dictOrd."Eq0" module."Prim".undefined) (dictOrd1."Eq0" module."Prim".undefined);
+    };
+  bifunctorProduct2 = dictBifunctor: dictBifunctor1: 
+    { bimap = f: g: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Product2"
+              then 
+                let
+                  f1 = f;
+                  g1 = g;
+                  x = v.__field0;
+                  y = v.__field1;
+                in
+                  Product2 (module."LocalDependency.Data.Bifunctor".bimap dictBifunctor f1 g1 x) (module."LocalDependency.Data.Bifunctor".bimap dictBifunctor1 f1 g1 y)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Product2.purs at 30:1 - 31:66";
+        in
+          __pattern0 __patternFail;
+    };
+  biapplyProduct2 = dictBiapply: dictBiapply1: 
+    { biapply = v: v1: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Product2" && v1.__tag == "Product2"
+              then 
+                let
+                  w = v.__field0;
+                  x = v.__field1;
+                  y = v1.__field0;
+                  z = v1.__field1;
+                in
+                  Product2 (module."LocalDependency.Control.Biapply".biapply dictBiapply w y) (module."LocalDependency.Control.Biapply".biapply dictBiapply1 x z)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/functors/Data/Functor/Product2.purs at 33:1 - 34:79";
+        in
+          __pattern0 __patternFail;
+      "Bifunctor0" = __unused: bifunctorProduct2 (dictBiapply."Bifunctor0" module."Prim".undefined) (dictBiapply1."Bifunctor0" module."Prim".undefined);
+    };
+  biapplicativeProduct2 = dictBiapplicative: dictBiapplicative1: 
+    { bipure = a: b: Product2 (module."LocalDependency.Control.Biapplicative".bipure dictBiapplicative a b) (module."LocalDependency.Control.Biapplicative".bipure dictBiapplicative1 a b);
+      "Biapply0" = __unused: biapplyProduct2 (dictBiapplicative."Biapply0" module."Prim".undefined) (dictBiapplicative1."Biapply0" module."Prim".undefined);
+    };
+in
+  {inherit Product2 eqProduct2 ordProduct2 showProduct2 functorProduct2 bifunctorProduct2 biapplyProduct2 biapplicativeProduct2 profunctorProduct2;}
+;
+
+LocalDependency-Data-FunctorWithIndex_default-nix = 
+let
+  module = 
+    { "Control.Semigroupoid" = Control-Semigroupoid_default-nix;
+      "Data.Function" = Data-Function_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.Monoid.Additive" = Data-Monoid-Additive_default-nix;
+      "Data.Monoid.Conj" = Data-Monoid-Conj_default-nix;
+      "Data.Monoid.Disj" = Data-Monoid-Disj_default-nix;
+      "Data.Monoid.Dual" = Data-Monoid-Dual_default-nix;
+      "Data.Monoid.Multiplicative" = Data-Monoid-Multiplicative_default-nix;
+      "Data.Unit" = Data-Unit_default-nix;
+      "LocalDependency.Data.Bifunctor" = LocalDependency-Data-Bifunctor_default-nix;
+      "LocalDependency.Data.Const" = LocalDependency-Data-Const_default-nix;
+      "LocalDependency.Data.Either" = LocalDependency-Data-Either_default-nix;
+      "LocalDependency.Data.Functor.App" = LocalDependency-Data-Functor-App_default-nix;
+      "LocalDependency.Data.Functor.Compose" = LocalDependency-Data-Functor-Compose_default-nix;
+      "LocalDependency.Data.Functor.Coproduct" = LocalDependency-Data-Functor-Coproduct_default-nix;
+      "LocalDependency.Data.Functor.Product" = LocalDependency-Data-Functor-Product_default-nix;
+      "LocalDependency.Data.Identity" = LocalDependency-Data-Identity_default-nix;
+      "LocalDependency.Data.Maybe" = LocalDependency-Data-Maybe_default-nix;
+      "LocalDependency.Data.Maybe.First" = LocalDependency-Data-Maybe-First_default-nix;
+      "LocalDependency.Data.Maybe.Last" = LocalDependency-Data-Maybe-Last_default-nix;
+      "LocalDependency.Data.Tuple" = LocalDependency-Data-Tuple_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  foreign = LocalDependency-Data-FunctorWithIndex_foreign-nix;
+  mapWithIndexArray = foreign.mapWithIndexArray;
+  FunctorWithIndex-Dict = x: x;
+  mapWithIndex = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.mapWithIndex;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/FunctorWithIndex.purs at 36:3 - 36:58";
+    in
+      __pattern0 __patternFail;
+  mapDefault = dictFunctorWithIndex: f: mapWithIndex dictFunctorWithIndex (module."Data.Function".const f);
+  functorWithIndexTuple = 
+    { mapWithIndex = f: module."Data.Function".apply (module."Data.Functor".map module."LocalDependency.Data.Tuple".functorTuple) (f module."Data.Unit".unit);
+      "Functor0" = __unused: module."LocalDependency.Data.Tuple".functorTuple;
+    };
+  functorWithIndexProduct = dictFunctorWithIndex: dictFunctorWithIndex1: 
+    { mapWithIndex = f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              fga = v;
+            in
+              module."LocalDependency.Data.Bifunctor".bimap module."LocalDependency.Data.Bifunctor".bifunctorTuple (mapWithIndex dictFunctorWithIndex (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn f1 module."LocalDependency.Data.Either".Left)) (mapWithIndex dictFunctorWithIndex1 (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn f1 module."LocalDependency.Data.Either".Right)) fga;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/FunctorWithIndex.purs at 79:1 - 80:110";
+        in
+          __pattern0 __patternFail;
+      "Functor0" = __unused: module."LocalDependency.Data.Functor.Product".functorProduct (dictFunctorWithIndex."Functor0" module."Prim".undefined) (dictFunctorWithIndex1."Functor0" module."Prim".undefined);
+    };
+  functorWithIndexMultiplicative = 
+    { mapWithIndex = f: module."Data.Function".apply (module."Data.Functor".map module."Data.Monoid.Multiplicative".functorMultiplicative) (f module."Data.Unit".unit);
+      "Functor0" = __unused: module."Data.Monoid.Multiplicative".functorMultiplicative;
+    };
+  functorWithIndexMaybe = 
+    { mapWithIndex = f: module."Data.Function".apply (module."Data.Functor".map module."LocalDependency.Data.Maybe".functorMaybe) (f module."Data.Unit".unit);
+      "Functor0" = __unused: module."LocalDependency.Data.Maybe".functorMaybe;
+    };
+  functorWithIndexLast = 
+    { mapWithIndex = f: module."Data.Function".apply (module."Data.Functor".map module."LocalDependency.Data.Maybe.Last".functorLast) (f module."Data.Unit".unit);
+      "Functor0" = __unused: module."LocalDependency.Data.Maybe.Last".functorLast;
+    };
+  functorWithIndexIdentity = 
+    { mapWithIndex = f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              a = v;
+            in
+              f1 module."Data.Unit".unit a;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/FunctorWithIndex.purs at 73:1 - 74:52";
+        in
+          __pattern0 __patternFail;
+      "Functor0" = __unused: module."LocalDependency.Data.Identity".functorIdentity;
+    };
+  functorWithIndexFirst = 
+    { mapWithIndex = f: module."Data.Function".apply (module."Data.Functor".map module."LocalDependency.Data.Maybe.First".functorFirst) (f module."Data.Unit".unit);
+      "Functor0" = __unused: module."LocalDependency.Data.Maybe.First".functorFirst;
+    };
+  functorWithIndexEither = 
+    { mapWithIndex = f: module."Data.Function".apply (module."Data.Functor".map module."LocalDependency.Data.Either".functorEither) (f module."Data.Unit".unit);
+      "Functor0" = __unused: module."LocalDependency.Data.Either".functorEither;
+    };
+  functorWithIndexDual = 
+    { mapWithIndex = f: module."Data.Function".apply (module."Data.Functor".map module."Data.Monoid.Dual".functorDual) (f module."Data.Unit".unit);
+      "Functor0" = __unused: module."Data.Monoid.Dual".functorDual;
+    };
+  functorWithIndexDisj = 
+    { mapWithIndex = f: module."Data.Function".apply (module."Data.Functor".map module."Data.Monoid.Disj".functorDisj) (f module."Data.Unit".unit);
+      "Functor0" = __unused: module."Data.Monoid.Disj".functorDisj;
+    };
+  functorWithIndexCoproduct = dictFunctorWithIndex: dictFunctorWithIndex1: 
+    { mapWithIndex = f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              e = v;
+            in
+              module."LocalDependency.Data.Bifunctor".bimap module."LocalDependency.Data.Bifunctor".bifunctorEither (mapWithIndex dictFunctorWithIndex (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn f1 module."LocalDependency.Data.Either".Left)) (mapWithIndex dictFunctorWithIndex1 (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn f1 module."LocalDependency.Data.Either".Right)) e;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/FunctorWithIndex.purs at 82:1 - 83:110";
+        in
+          __pattern0 __patternFail;
+      "Functor0" = __unused: module."LocalDependency.Data.Functor.Coproduct".functorCoproduct (dictFunctorWithIndex."Functor0" module."Prim".undefined) (dictFunctorWithIndex1."Functor0" module."Prim".undefined);
+    };
+  functorWithIndexConst = 
+    { mapWithIndex = v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              x = v1;
+            in
+              x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/FunctorWithIndex.purs at 76:1 - 77:37";
+        in
+          __pattern0 __patternFail;
+      "Functor0" = __unused: module."LocalDependency.Data.Const".functorConst;
+    };
+  functorWithIndexConj = 
+    { mapWithIndex = f: module."Data.Function".apply (module."Data.Functor".map module."Data.Monoid.Conj".functorConj) (f module."Data.Unit".unit);
+      "Functor0" = __unused: module."Data.Monoid.Conj".functorConj;
+    };
+  functorWithIndexCompose = dictFunctorWithIndex: dictFunctorWithIndex1: 
+    { mapWithIndex = f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              fga = v;
+            in
+              module."Data.Function".apply module."LocalDependency.Data.Functor.Compose".Compose (mapWithIndex dictFunctorWithIndex (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (mapWithIndex dictFunctorWithIndex1) (module."LocalDependency.Data.Tuple".curry f1)) fga);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/FunctorWithIndex.purs at 85:1 - 86:87";
+        in
+          __pattern0 __patternFail;
+      "Functor0" = __unused: module."LocalDependency.Data.Functor.Compose".functorCompose (dictFunctorWithIndex."Functor0" module."Prim".undefined) (dictFunctorWithIndex1."Functor0" module."Prim".undefined);
+    };
+  functorWithIndexArray = 
+    { mapWithIndex = mapWithIndexArray;
+      "Functor0" = __unused: module."Data.Functor".functorArray;
+    };
+  functorWithIndexApp = dictFunctorWithIndex: 
+    { mapWithIndex = f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              x = v;
+            in
+              module."Data.Function".apply module."LocalDependency.Data.Functor.App".App (mapWithIndex dictFunctorWithIndex f1 x);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/FunctorWithIndex.purs at 88:1 - 89:50";
+        in
+          __pattern0 __patternFail;
+      "Functor0" = __unused: module."LocalDependency.Data.Functor.App".functorApp (dictFunctorWithIndex."Functor0" module."Prim".undefined);
+    };
+  functorWithIndexAdditive = 
+    { mapWithIndex = f: module."Data.Function".apply (module."Data.Functor".map module."Data.Monoid.Additive".functorAdditive) (f module."Data.Unit".unit);
+      "Functor0" = __unused: module."Data.Monoid.Additive".functorAdditive;
+    };
+in
+  {inherit mapWithIndex mapDefault functorWithIndexArray functorWithIndexMaybe functorWithIndexFirst functorWithIndexLast functorWithIndexAdditive functorWithIndexDual functorWithIndexConj functorWithIndexDisj functorWithIndexMultiplicative functorWithIndexEither functorWithIndexTuple functorWithIndexIdentity functorWithIndexConst functorWithIndexProduct functorWithIndexCoproduct functorWithIndexCompose functorWithIndexApp;}
+;
+
+LocalDependency-Data-FunctorWithIndex_foreign-nix = 
+
+{ # (i -> a -> b) -> Array a -> Array b
+  #
+  # This is the imap0 function from nixpkgs/lib/lists.nix.
+  mapWithIndexArray = f: xs:
+    builtins.genList (n: f n (builtins.elemAt xs n)) (builtins.length xs);
+}
+
+;
+
+LocalDependency-Data-Identity_default-nix = 
+let
+  module = 
+    { "Control.Applicative" = Control-Applicative_default-nix;
+      "Control.Apply" = Control-Apply_default-nix;
+      "Control.Bind" = Control-Bind_default-nix;
+      "Control.Monad" = Control-Monad_default-nix;
+      "Data.BooleanAlgebra" = Data-BooleanAlgebra_default-nix;
+      "Data.Bounded" = Data-Bounded_default-nix;
+      "Data.CommutativeRing" = Data-CommutativeRing_default-nix;
+      "Data.Eq" = Data-Eq_default-nix;
+      "Data.EuclideanRing" = Data-EuclideanRing_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.HeytingAlgebra" = Data-HeytingAlgebra_default-nix;
+      "Data.Monoid" = Data-Monoid_default-nix;
+      "Data.Newtype" = Data-Newtype_default-nix;
+      "Data.Ord" = Data-Ord_default-nix;
+      "Data.Ring" = Data-Ring_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+      "Data.Semiring" = Data-Semiring_default-nix;
+      "Data.Show" = Data-Show_default-nix;
+      "LocalDependency.Control.Alt" = LocalDependency-Control-Alt_default-nix;
+      "LocalDependency.Control.Comonad" = LocalDependency-Control-Comonad_default-nix;
+      "LocalDependency.Control.Extend" = LocalDependency-Control-Extend_default-nix;
+      "LocalDependency.Control.Lazy" = LocalDependency-Control-Lazy_default-nix;
+      "LocalDependency.Data.Functor.Invariant" = LocalDependency-Data-Functor-Invariant_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  Identity = x: x;
+  showIdentity = dictShow: 
+    { show = v: 
+        let
+          __pattern0 = __fail: 
+            let
+              x = v;
+            in
+              module."Data.Semigroup".append module."Data.Semigroup".semigroupString "(Identity " (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Show".show dictShow x) ")");
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/identity/Data/Identity.purs at 42:1 - 43:52";
+        in
+          __pattern0 __patternFail;
+    };
+  semiringIdentity = dictSemiring: dictSemiring;
+  semigroupIdentity = dictSemigroup: dictSemigroup;
+  ringIdentity = dictRing: dictRing;
+  ordIdentity = dictOrd: dictOrd;
+  newtypeIdentity = {"Coercible0" = __unused: module."Prim".undefined;};
+  monoidIdentity = dictMonoid: dictMonoid;
+  lazyIdentity = dictLazy: dictLazy;
+  heytingAlgebraIdentity = dictHeytingAlgebra: dictHeytingAlgebra;
+  functorIdentity = 
+    { map = f: m: 
+        let
+          __pattern0 = __fail: 
+            let
+              v = m;
+            in
+              f v;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/identity/Data/Identity.purs at 49:1 - 49:52";
+        in
+          __pattern0 __patternFail;
+    };
+  invariantIdentity = {imap = module."LocalDependency.Data.Functor.Invariant".imapF functorIdentity;};
+  extendIdentity = 
+    { extend = f: m: f m;
+      "Functor0" = __unused: functorIdentity;
+    };
+  euclideanRingIdentity = dictEuclideanRing: dictEuclideanRing;
+  eqIdentity = dictEq: dictEq;
+  eq1Identity = {eq1 = dictEq: module."Data.Eq".eq (eqIdentity dictEq);};
+  ord1Identity = 
+    { compare1 = dictOrd: module."Data.Ord".compare (ordIdentity dictOrd);
+      "Eq10" = __unused: eq1Identity;
+    };
+  comonadIdentity = 
+    { extract = v: 
+        let
+          __pattern0 = __fail: 
+            let
+              x = v;
+            in
+              x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/identity/Data/Identity.purs at 71:1 - 72:27";
+        in
+          __pattern0 __patternFail;
+      "Extend0" = __unused: extendIdentity;
+    };
+  commutativeRingIdentity = dictCommutativeRing: dictCommutativeRing;
+  boundedIdentity = dictBounded: dictBounded;
+  booleanAlgebraIdentity = dictBooleanAlgebra: dictBooleanAlgebra;
+  applyIdentity = 
+    { apply = v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              f = v;
+              x = v1;
+            in
+              f x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/identity/Data/Identity.purs at 57:1 - 58:51";
+        in
+          __pattern0 __patternFail;
+      "Functor0" = __unused: functorIdentity;
+    };
+  bindIdentity = 
+    { bind = v: f: 
+        let
+          __pattern0 = __fail: 
+            let
+              m = v;
+              f1 = f;
+            in
+              f1 m;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/identity/Data/Identity.purs at 63:1 - 64:28";
+        in
+          __pattern0 __patternFail;
+      "Apply0" = __unused: applyIdentity;
+    };
+  applicativeIdentity = 
+    { pure = Identity;
+      "Apply0" = __unused: applyIdentity;
+    };
+  monadIdentity = 
+    { "Applicative0" = __unused: applicativeIdentity;
+      "Bind1" = __unused: bindIdentity;
+    };
+  altIdentity = 
+    { alt = x: v: x;
+      "Functor0" = __unused: functorIdentity;
+    };
+in
+  {inherit Identity newtypeIdentity eqIdentity ordIdentity boundedIdentity heytingAlgebraIdentity booleanAlgebraIdentity semigroupIdentity monoidIdentity semiringIdentity euclideanRingIdentity ringIdentity commutativeRingIdentity lazyIdentity showIdentity eq1Identity ord1Identity functorIdentity invariantIdentity altIdentity applyIdentity applicativeIdentity bindIdentity monadIdentity extendIdentity comonadIdentity;}
+;
+
+LocalDependency-Data-Maybe-First_default-nix = 
+let
+  module = 
+    { "Control.Applicative" = Control-Applicative_default-nix;
+      "Control.Apply" = Control-Apply_default-nix;
+      "Control.Bind" = Control-Bind_default-nix;
+      "Control.Monad" = Control-Monad_default-nix;
+      "Data.Bounded" = Data-Bounded_default-nix;
+      "Data.Eq" = Data-Eq_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.Monoid" = Data-Monoid_default-nix;
+      "Data.Newtype" = Data-Newtype_default-nix;
+      "Data.Ord" = Data-Ord_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+      "Data.Show" = Data-Show_default-nix;
+      "LocalDependency.Control.Alt" = LocalDependency-Control-Alt_default-nix;
+      "LocalDependency.Control.Alternative" = LocalDependency-Control-Alternative_default-nix;
+      "LocalDependency.Control.Extend" = LocalDependency-Control-Extend_default-nix;
+      "LocalDependency.Control.MonadZero" = LocalDependency-Control-MonadZero_default-nix;
+      "LocalDependency.Control.Plus" = LocalDependency-Control-Plus_default-nix;
+      "LocalDependency.Data.Functor.Invariant" = LocalDependency-Data-Functor-Invariant_default-nix;
+      "LocalDependency.Data.Maybe" = LocalDependency-Data-Maybe_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  First = x: x;
+  showFirst = dictShow: 
+    { show = v: 
+        let
+          __pattern0 = __fail: 
+            let
+              a = v;
+            in
+              module."Data.Semigroup".append module."Data.Semigroup".semigroupString "First (" (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Show".show (module."LocalDependency.Data.Maybe".showMaybe dictShow) a) ")");
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/maybe/Data/Maybe/First.purs at 49:1 - 50:46";
+        in
+          __pattern0 __patternFail;
+    };
+  semigroupFirst = 
+    { append = v: v1: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Just"
+              then 
+                let
+                  first = v;
+                in
+                  first
+              else __fail;
+          __pattern1 = __fail: 
+            let
+              second = v1;
+            in
+              second;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/maybe/Data/Maybe/First.purs at 52:1 - 54:27";
+        in
+          __pattern0 (__pattern1 __patternFail);
+    };
+  ordFirst = dictOrd: module."LocalDependency.Data.Maybe".ordMaybe dictOrd;
+  ord1First = module."LocalDependency.Data.Maybe".ord1Maybe;
+  newtypeFirst = {"Coercible0" = __unused: module."Prim".undefined;};
+  monoidFirst = 
+    { mempty = module."LocalDependency.Data.Maybe".Nothing;
+      "Semigroup0" = __unused: semigroupFirst;
+    };
+  monadFirst = module."LocalDependency.Data.Maybe".monadMaybe;
+  invariantFirst = module."LocalDependency.Data.Maybe".invariantMaybe;
+  functorFirst = module."LocalDependency.Data.Maybe".functorMaybe;
+  extendFirst = module."LocalDependency.Data.Maybe".extendMaybe;
+  eqFirst = dictEq: module."LocalDependency.Data.Maybe".eqMaybe dictEq;
+  eq1First = module."LocalDependency.Data.Maybe".eq1Maybe;
+  boundedFirst = dictBounded: module."LocalDependency.Data.Maybe".boundedMaybe dictBounded;
+  bindFirst = module."LocalDependency.Data.Maybe".bindMaybe;
+  applyFirst = module."LocalDependency.Data.Maybe".applyMaybe;
+  applicativeFirst = module."LocalDependency.Data.Maybe".applicativeMaybe;
+  altFirst = 
+    { alt = module."Data.Semigroup".append semigroupFirst;
+      "Functor0" = __unused: functorFirst;
+    };
+  plusFirst = 
+    { empty = module."Data.Monoid".mempty monoidFirst;
+      "Alt0" = __unused: altFirst;
+    };
+  alternativeFirst = 
+    { "Applicative0" = __unused: applicativeFirst;
+      "Plus1" = __unused: plusFirst;
+    };
+  monadZeroFirst = 
+    { "Monad0" = __unused: monadFirst;
+      "Alternative1" = __unused: alternativeFirst;
+      "MonadZeroIsDeprecated2" = __unused: module."Prim".undefined;
+    };
+in
+  {inherit First newtypeFirst eqFirst eq1First ordFirst ord1First boundedFirst functorFirst invariantFirst applyFirst applicativeFirst bindFirst monadFirst extendFirst showFirst semigroupFirst monoidFirst altFirst plusFirst alternativeFirst monadZeroFirst;}
+;
+
+LocalDependency-Data-Maybe-Last_default-nix = 
+let
+  module = 
+    { "Control.Applicative" = Control-Applicative_default-nix;
+      "Control.Apply" = Control-Apply_default-nix;
+      "Control.Bind" = Control-Bind_default-nix;
+      "Control.Monad" = Control-Monad_default-nix;
+      "Data.Bounded" = Data-Bounded_default-nix;
+      "Data.Eq" = Data-Eq_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.Monoid" = Data-Monoid_default-nix;
+      "Data.Newtype" = Data-Newtype_default-nix;
+      "Data.Ord" = Data-Ord_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+      "Data.Show" = Data-Show_default-nix;
+      "LocalDependency.Control.Alt" = LocalDependency-Control-Alt_default-nix;
+      "LocalDependency.Control.Alternative" = LocalDependency-Control-Alternative_default-nix;
+      "LocalDependency.Control.Extend" = LocalDependency-Control-Extend_default-nix;
+      "LocalDependency.Control.MonadZero" = LocalDependency-Control-MonadZero_default-nix;
+      "LocalDependency.Control.Plus" = LocalDependency-Control-Plus_default-nix;
+      "LocalDependency.Data.Functor.Invariant" = LocalDependency-Data-Functor-Invariant_default-nix;
+      "LocalDependency.Data.Maybe" = LocalDependency-Data-Maybe_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  Last = x: x;
+  showLast = dictShow: 
+    { show = v: 
+        let
+          __pattern0 = __fail: 
+            let
+              a = v;
+            in
+              module."Data.Semigroup".append module."Data.Semigroup".semigroupString "(Last " (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Show".show (module."LocalDependency.Data.Maybe".showMaybe dictShow) a) ")");
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/maybe/Data/Maybe/Last.purs at 49:1 - 50:44";
+        in
+          __pattern0 __patternFail;
+    };
+  semigroupLast = 
+    { append = v: v1: 
+        let
+          __pattern0 = __fail: 
+            if v1.__tag == "Just"
+              then 
+                let
+                  last = v1;
+                in
+                  last
+              else __fail;
+          __pattern1 = __fail: 
+            if v1.__tag == "Nothing"
+              then 
+                let
+                  last = v;
+                in
+                  last
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/maybe/Data/Maybe/Last.purs at 52:1 - 54:36";
+        in
+          __pattern0 (__pattern1 __patternFail);
+    };
+  ordLast = dictOrd: module."LocalDependency.Data.Maybe".ordMaybe dictOrd;
+  ord1Last = module."LocalDependency.Data.Maybe".ord1Maybe;
+  newtypeLast = {"Coercible0" = __unused: module."Prim".undefined;};
+  monoidLast = 
+    { mempty = module."LocalDependency.Data.Maybe".Nothing;
+      "Semigroup0" = __unused: semigroupLast;
+    };
+  monadLast = module."LocalDependency.Data.Maybe".monadMaybe;
+  invariantLast = module."LocalDependency.Data.Maybe".invariantMaybe;
+  functorLast = module."LocalDependency.Data.Maybe".functorMaybe;
+  extendLast = module."LocalDependency.Data.Maybe".extendMaybe;
+  eqLast = dictEq: module."LocalDependency.Data.Maybe".eqMaybe dictEq;
+  eq1Last = module."LocalDependency.Data.Maybe".eq1Maybe;
+  boundedLast = dictBounded: module."LocalDependency.Data.Maybe".boundedMaybe dictBounded;
+  bindLast = module."LocalDependency.Data.Maybe".bindMaybe;
+  applyLast = module."LocalDependency.Data.Maybe".applyMaybe;
+  applicativeLast = module."LocalDependency.Data.Maybe".applicativeMaybe;
+  altLast = 
+    { alt = module."Data.Semigroup".append semigroupLast;
+      "Functor0" = __unused: functorLast;
+    };
+  plusLast = 
+    { empty = module."Data.Monoid".mempty monoidLast;
+      "Alt0" = __unused: altLast;
+    };
+  alternativeLast = 
+    { "Applicative0" = __unused: applicativeLast;
+      "Plus1" = __unused: plusLast;
+    };
+  monadZeroLast = 
+    { "Monad0" = __unused: monadLast;
+      "Alternative1" = __unused: alternativeLast;
+      "MonadZeroIsDeprecated2" = __unused: module."Prim".undefined;
+    };
+in
+  {inherit Last newtypeLast eqLast eq1Last ordLast ord1Last boundedLast functorLast invariantLast applyLast applicativeLast bindLast monadLast extendLast showLast semigroupLast monoidLast altLast plusLast alternativeLast monadZeroLast;}
+;
+
+LocalDependency-Data-Maybe_default-nix = 
+let
+  module = 
+    { "Control.Applicative" = Control-Applicative_default-nix;
+      "Control.Apply" = Control-Apply_default-nix;
+      "Control.Bind" = Control-Bind_default-nix;
+      "Control.Category" = Control-Category_default-nix;
+      "Control.Monad" = Control-Monad_default-nix;
+      "Data.Bounded" = Data-Bounded_default-nix;
+      "Data.Eq" = Data-Eq_default-nix;
+      "Data.Function" = Data-Function_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.Generic.Rep" = Data-Generic-Rep_default-nix;
+      "Data.Monoid" = Data-Monoid_default-nix;
+      "Data.Ord" = Data-Ord_default-nix;
+      "Data.Ordering" = Data-Ordering_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+      "Data.Show" = Data-Show_default-nix;
+      "Data.Unit" = Data-Unit_default-nix;
+      "LocalDependency.Control.Alt" = LocalDependency-Control-Alt_default-nix;
+      "LocalDependency.Control.Alternative" = LocalDependency-Control-Alternative_default-nix;
+      "LocalDependency.Control.Extend" = LocalDependency-Control-Extend_default-nix;
+      "LocalDependency.Control.MonadZero" = LocalDependency-Control-MonadZero_default-nix;
+      "LocalDependency.Control.Plus" = LocalDependency-Control-Plus_default-nix;
+      "LocalDependency.Data.Functor.Invariant" = LocalDependency-Data-Functor-Invariant_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  Nothing = {__tag = "Nothing";};
+  Just = value0: 
+    { __tag = "Just";
+      __field0 = value0;
+    };
+  showMaybe = dictShow: 
+    { show = v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Just"
+              then 
+                let
+                  x = v.__field0;
+                in
+                  module."Data.Semigroup".append module."Data.Semigroup".semigroupString "(Just " (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Show".show dictShow x) ")")
+              else __fail;
+          __pattern1 = __fail: if v.__tag == "Nothing" then "Nothing" else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/maybe/Data/Maybe.purs at 216:1 - 218:28";
+        in
+          __pattern0 (__pattern1 __patternFail);
+    };
+  semigroupMaybe = dictSemigroup: 
+    { append = v: v1: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Nothing"
+              then 
+                let
+                  y = v1;
+                in
+                  y
+              else __fail;
+          __pattern1 = __fail: 
+            if v1.__tag == "Nothing"
+              then 
+                let
+                  x = v;
+                in
+                  x
+              else __fail;
+          __pattern2 = __fail: 
+            if v.__tag == "Just" && v1.__tag == "Just"
+              then 
+                let
+                  x = v.__field0;
+                  y = v1.__field0;
+                in
+                  Just (module."Data.Semigroup".append dictSemigroup x y)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/maybe/Data/Maybe.purs at 185:1 - 188:43";
+        in
+          __pattern0 (__pattern1 (__pattern2 __patternFail));
+    };
+  optional = dictAlt: dictApplicative: a: module."LocalDependency.Control.Alt".alt dictAlt (module."Data.Functor".map (dictAlt."Functor0" module."Prim".undefined) Just a) (module."Control.Applicative".pure dictApplicative Nothing);
+  monoidMaybe = dictSemigroup: 
+    { mempty = Nothing;
+      "Semigroup0" = __unused: semigroupMaybe dictSemigroup;
+    };
+  maybe' = v: v1: v2: 
+    let
+      __pattern0 = __fail: 
+        if v2.__tag == "Nothing"
+          then 
+            let
+              g = v;
+            in
+              g module."Data.Unit".unit
+          else __fail;
+      __pattern1 = __fail: 
+        if v2.__tag == "Just"
+          then 
+            let
+              f = v1;
+              a = v2.__field0;
+            in
+              f a
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/maybe/Data/Maybe.purs at 243:1 - 243:62";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  maybe = v: v1: v2: 
+    let
+      __pattern0 = __fail: 
+        if v2.__tag == "Nothing"
+          then 
+            let
+              b = v;
+            in
+              b
+          else __fail;
+      __pattern1 = __fail: 
+        if v2.__tag == "Just"
+          then 
+            let
+              f = v1;
+              a = v2.__field0;
+            in
+              f a
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/maybe/Data/Maybe.purs at 230:1 - 230:51";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  isNothing = maybe true (module."Data.Function".const false);
+  isJust = maybe false (module."Data.Function".const true);
+  genericMaybe = 
+    { to = x: 
+        let
+          __pattern0 = __fail: if x.__tag == "Inl" then Nothing else __fail;
+          __pattern1 = __fail: 
+            if x.__tag == "Inr"
+              then 
+                let
+                  arg = x.__field0;
+                in
+                  Just arg
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/maybe/Data/Maybe.purs at 220:1 - 220:52";
+        in
+          __pattern0 (__pattern1 __patternFail);
+      from = x: 
+        let
+          __pattern0 = __fail: if x.__tag == "Nothing" then module."Data.Generic.Rep".Inl module."Data.Generic.Rep".NoArguments else __fail;
+          __pattern1 = __fail: 
+            if x.__tag == "Just"
+              then 
+                let
+                  arg = x.__field0;
+                in
+                  module."Data.Generic.Rep".Inr arg
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/maybe/Data/Maybe.purs at 220:1 - 220:52";
+        in
+          __pattern0 (__pattern1 __patternFail);
+    };
+  functorMaybe = 
+    { map = v: v1: 
+        let
+          __pattern0 = __fail: 
+            if v1.__tag == "Just"
+              then 
+                let
+                  fn = v;
+                  x = v1.__field0;
+                in
+                  Just (fn x)
+              else __fail;
+          __pattern1 = __fail: Nothing;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/maybe/Data/Maybe.purs at 33:1 - 35:28";
+        in
+          __pattern0 (__pattern1 __patternFail);
+    };
+  invariantMaybe = {imap = module."LocalDependency.Data.Functor.Invariant".imapF functorMaybe;};
+  fromMaybe' = a: maybe' a (module."Control.Category".identity module."Control.Category".categoryFn);
+  fromMaybe = a: maybe a (module."Control.Category".identity module."Control.Category".categoryFn);
+  fromJust = dictPartial: v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Just"
+          then 
+            let
+              x = v.__field0;
+            in
+              x
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/maybe/Data/Maybe.purs at 281:1 - 281:46";
+    in
+      __pattern0 __patternFail;
+  extendMaybe = 
+    { extend = v: v1: 
+        let
+          __pattern0 = __fail: if v1.__tag == "Nothing" then Nothing else __fail;
+          __pattern1 = __fail: 
+            let
+              f = v;
+              x = v1;
+            in
+              Just (f x);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/maybe/Data/Maybe.purs at 167:1 - 169:33";
+        in
+          __pattern0 (__pattern1 __patternFail);
+      "Functor0" = __unused: functorMaybe;
+    };
+  eqMaybe = dictEq: 
+    { eq = x: y: 
+        let
+          __pattern0 = __fail: if x.__tag == "Nothing" && y.__tag == "Nothing" then true else __fail;
+          __pattern1 = __fail: 
+            if x.__tag == "Just" && y.__tag == "Just"
+              then 
+                let
+                  l = x.__field0;
+                  r = y.__field0;
+                in
+                  module."Data.Eq".eq dictEq l r
+              else __fail;
+          __pattern2 = __fail: false;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/maybe/Data/Maybe.purs at 196:1 - 196:48";
+        in
+          __pattern0 (__pattern1 (__pattern2 __patternFail));
+    };
+  ordMaybe = dictOrd: 
+    { compare = x: y: 
+        let
+          __pattern0 = __fail: if x.__tag == "Nothing" && y.__tag == "Nothing" then module."Data.Ordering".EQ else __fail;
+          __pattern1 = __fail: if x.__tag == "Nothing" then module."Data.Ordering".LT else __fail;
+          __pattern2 = __fail: if y.__tag == "Nothing" then module."Data.Ordering".GT else __fail;
+          __pattern3 = __fail: 
+            if x.__tag == "Just" && y.__tag == "Just"
+              then 
+                let
+                  l = x.__field0;
+                  r = y.__field0;
+                in
+                  module."Data.Ord".compare dictOrd l r
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/maybe/Data/Maybe.purs at 205:1 - 205:51";
+        in
+          __pattern0 (__pattern1 (__pattern2 (__pattern3 __patternFail)));
+      "Eq0" = __unused: eqMaybe (dictOrd."Eq0" module."Prim".undefined);
+    };
+  eq1Maybe = {eq1 = dictEq: module."Data.Eq".eq (eqMaybe dictEq);};
+  ord1Maybe = 
+    { compare1 = dictOrd: module."Data.Ord".compare (ordMaybe dictOrd);
+      "Eq10" = __unused: eq1Maybe;
+    };
+  boundedMaybe = dictBounded: 
+    { top = Just (module."Data.Bounded".top dictBounded);
+      bottom = Nothing;
+      "Ord0" = __unused: ordMaybe (dictBounded."Ord0" module."Prim".undefined);
+    };
+  applyMaybe = 
+    { apply = v: v1: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Just"
+              then 
+                let
+                  fn = v.__field0;
+                  x = v1;
+                in
+                  module."Data.Functor".map functorMaybe fn x
+              else __fail;
+          __pattern1 = __fail: if v.__tag == "Nothing" then Nothing else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/maybe/Data/Maybe.purs at 68:1 - 70:30";
+        in
+          __pattern0 (__pattern1 __patternFail);
+      "Functor0" = __unused: functorMaybe;
+    };
+  bindMaybe = 
+    { bind = v: v1: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Just"
+              then 
+                let
+                  x = v.__field0;
+                  k = v1;
+                in
+                  k x
+              else __fail;
+          __pattern1 = __fail: if v.__tag == "Nothing" then Nothing else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/maybe/Data/Maybe.purs at 126:1 - 128:28";
+        in
+          __pattern0 (__pattern1 __patternFail);
+      "Apply0" = __unused: applyMaybe;
+    };
+  applicativeMaybe = 
+    { pure = Just;
+      "Apply0" = __unused: applyMaybe;
+    };
+  monadMaybe = 
+    { "Applicative0" = __unused: applicativeMaybe;
+      "Bind1" = __unused: bindMaybe;
+    };
+  altMaybe = 
+    { alt = v: v1: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Nothing"
+              then 
+                let
+                  r = v1;
+                in
+                  r
+              else __fail;
+          __pattern1 = __fail: 
+            let
+              l = v;
+            in
+              l;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/maybe/Data/Maybe.purs at 103:1 - 105:20";
+        in
+          __pattern0 (__pattern1 __patternFail);
+      "Functor0" = __unused: functorMaybe;
+    };
+  plusMaybe = 
+    { empty = Nothing;
+      "Alt0" = __unused: altMaybe;
+    };
+  alternativeMaybe = 
+    { "Applicative0" = __unused: applicativeMaybe;
+      "Plus1" = __unused: plusMaybe;
+    };
+  monadZeroMaybe = 
+    { "Monad0" = __unused: monadMaybe;
+      "Alternative1" = __unused: alternativeMaybe;
+      "MonadZeroIsDeprecated2" = __unused: module."Prim".undefined;
+    };
+in
+  {inherit Nothing Just maybe maybe' fromMaybe fromMaybe' isJust isNothing fromJust optional functorMaybe applyMaybe applicativeMaybe altMaybe plusMaybe alternativeMaybe bindMaybe monadMaybe monadZeroMaybe extendMaybe invariantMaybe semigroupMaybe monoidMaybe eqMaybe eq1Maybe ordMaybe ord1Maybe boundedMaybe showMaybe genericMaybe;}
+;
+
+LocalDependency-Data-Monoid-Alternate_default-nix = 
+let
+  module = 
+    { "Control.Applicative" = Control-Applicative_default-nix;
+      "Control.Apply" = Control-Apply_default-nix;
+      "Control.Bind" = Control-Bind_default-nix;
+      "Control.Monad" = Control-Monad_default-nix;
+      "Data.Bounded" = Data-Bounded_default-nix;
+      "Data.Eq" = Data-Eq_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.Monoid" = Data-Monoid_default-nix;
+      "Data.Newtype" = Data-Newtype_default-nix;
+      "Data.Ord" = Data-Ord_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+      "Data.Show" = Data-Show_default-nix;
+      "LocalDependency.Control.Alt" = LocalDependency-Control-Alt_default-nix;
+      "LocalDependency.Control.Alternative" = LocalDependency-Control-Alternative_default-nix;
+      "LocalDependency.Control.Comonad" = LocalDependency-Control-Comonad_default-nix;
+      "LocalDependency.Control.Extend" = LocalDependency-Control-Extend_default-nix;
+      "LocalDependency.Control.Plus" = LocalDependency-Control-Plus_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  Alternate = x: x;
+  showAlternate = dictShow: 
+    { show = v: 
+        let
+          __pattern0 = __fail: 
+            let
+              a = v;
+            in
+              module."Data.Semigroup".append module."Data.Semigroup".semigroupString "(Alternate " (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Show".show dictShow a) ")");
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/control/Data/Monoid/Alternate.purs at 53:1 - 54:54";
+        in
+          __pattern0 __patternFail;
+    };
+  semigroupAlternate = dictAlt: 
+    { append = v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              a = v;
+              b = v1;
+            in
+              module."LocalDependency.Control.Alt".alt dictAlt a b;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/control/Data/Monoid/Alternate.purs at 56:1 - 57:59";
+        in
+          __pattern0 __patternFail;
+    };
+  plusAlternate = dictPlus: dictPlus;
+  ordAlternate = dictOrd: dictOrd;
+  ord1Alternate = dictOrd1: dictOrd1;
+  newtypeAlternate = {"Coercible0" = __unused: module."Prim".undefined;};
+  monoidAlternate = dictPlus: 
+    { mempty = module."LocalDependency.Control.Plus".empty dictPlus;
+      "Semigroup0" = __unused: semigroupAlternate (dictPlus."Alt0" module."Prim".undefined);
+    };
+  monadAlternate = dictMonad: dictMonad;
+  functorAlternate = dictFunctor: dictFunctor;
+  extendAlternate = dictExtend: dictExtend;
+  eqAlternate = dictEq: dictEq;
+  eq1Alternate = dictEq1: dictEq1;
+  comonadAlternate = dictComonad: dictComonad;
+  boundedAlternate = dictBounded: dictBounded;
+  bindAlternate = dictBind: dictBind;
+  applyAlternate = dictApply: dictApply;
+  applicativeAlternate = dictApplicative: dictApplicative;
+  alternativeAlternate = dictAlternative: dictAlternative;
+  altAlternate = dictAlt: dictAlt;
+in
+  {inherit Alternate newtypeAlternate eqAlternate eq1Alternate ordAlternate ord1Alternate boundedAlternate functorAlternate applyAlternate applicativeAlternate altAlternate plusAlternate alternativeAlternate bindAlternate monadAlternate extendAlternate comonadAlternate showAlternate semigroupAlternate monoidAlternate;}
+;
+
+LocalDependency-Data-Op_default-nix = 
+let
+  module = 
+    { "Control.Category" = Control-Category_default-nix;
+      "Control.Semigroupoid" = Control-Semigroupoid_default-nix;
+      "Data.Monoid" = Data-Monoid_default-nix;
+      "Data.Newtype" = Data-Newtype_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+      "LocalDependency.Data.Functor.Contravariant" = LocalDependency-Data-Functor-Contravariant_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  Op = x: x;
+  semigroupoidOp = 
+    { compose = v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              f = v;
+              g = v1;
+            in
+              module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn g f;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/contravariant/Data/Op.purs at 15:1 - 16:43";
+        in
+          __pattern0 __patternFail;
+    };
+  semigroupOp = dictSemigroup: module."Data.Semigroup".semigroupFn dictSemigroup;
+  newtypeOp = {"Coercible0" = __unused: module."Prim".undefined;};
+  monoidOp = dictMonoid: module."Data.Monoid".monoidFn dictMonoid;
+  contravariantOp = 
+    { cmap = f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              g = v;
+            in
+              module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn g f1;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/contravariant/Data/Op.purs at 21:1 - 22:31";
+        in
+          __pattern0 __patternFail;
+    };
+  categoryOp = 
+    { identity = module."Control.Category".identity module."Control.Category".categoryFn;
+      "Semigroupoid0" = __unused: semigroupoidOp;
+    };
+in
+  {inherit Op newtypeOp semigroupOp monoidOp semigroupoidOp categoryOp contravariantOp;}
+;
+
+LocalDependency-Data-Predicate_default-nix = 
+let
+  module = 
+    { "Control.Semigroupoid" = Control-Semigroupoid_default-nix;
+      "Data.BooleanAlgebra" = Data-BooleanAlgebra_default-nix;
+      "Data.HeytingAlgebra" = Data-HeytingAlgebra_default-nix;
+      "Data.Newtype" = Data-Newtype_default-nix;
+      "LocalDependency.Data.Functor.Contravariant" = LocalDependency-Data-Functor-Contravariant_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  Predicate = x: x;
+  newtypePredicate = {"Coercible0" = __unused: module."Prim".undefined;};
+  heytingAlgebraPredicate = module."Data.HeytingAlgebra".heytingAlgebraFunction module."Data.HeytingAlgebra".heytingAlgebraBoolean;
+  contravariantPredicate = 
+    { cmap = f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              g = v;
+            in
+              module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn g f1;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/contravariant/Data/Predicate.purs at 17:1 - 18:45";
+        in
+          __pattern0 __patternFail;
+    };
+  booleanAlgebraPredicate = module."Data.BooleanAlgebra".booleanAlgebraFn module."Data.BooleanAlgebra".booleanAlgebraBoolean;
+in
+  {inherit Predicate newtypePredicate heytingAlgebraPredicate booleanAlgebraPredicate contravariantPredicate;}
+;
+
+LocalDependency-Data-Profunctor-Choice_default-nix = 
+let
+  module = 
+    { "Control.Category" = Control-Category_default-nix;
+      "Control.Semigroupoid" = Control-Semigroupoid_default-nix;
+      "Data.Function" = Data-Function_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "LocalDependency.Data.Either" = LocalDependency-Data-Either_default-nix;
+      "LocalDependency.Data.Profunctor" = LocalDependency-Data-Profunctor_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  Choice-Dict = x: x;
+  right = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.right;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/profunctor/Data/Profunctor/Choice.purs at 30:3 - 30:62";
+    in
+      __pattern0 __patternFail;
+  left = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.left;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/profunctor/Data/Profunctor/Choice.purs at 29:3 - 29:61";
+    in
+      __pattern0 __patternFail;
+  splitChoice = dictCategory: dictChoice: l: r: module."Control.Semigroupoid".composeFlipped (dictCategory."Semigroupoid0" module."Prim".undefined) (left dictChoice l) (right dictChoice r);
+  fanin = dictCategory: dictChoice: l: r: 
+    let
+      join = module."LocalDependency.Data.Profunctor".dimap (dictChoice."Profunctor0" module."Prim".undefined) (module."LocalDependency.Data.Either".either (module."Control.Category".identity module."Control.Category".categoryFn) (module."Control.Category".identity module."Control.Category".categoryFn)) (module."Control.Category".identity module."Control.Category".categoryFn) (module."Control.Category".identity dictCategory);
+    in
+      module."Control.Semigroupoid".composeFlipped (dictCategory."Semigroupoid0" module."Prim".undefined) (splitChoice dictCategory dictChoice l r) join;
+  choiceFn = 
+    { left = v: v1: 
+        let
+          __pattern0 = __fail: 
+            if v1.__tag == "Left"
+              then 
+                let
+                  a2b = v;
+                  a = v1.__field0;
+                in
+                  module."Data.Function".apply module."LocalDependency.Data.Either".Left (a2b a)
+              else __fail;
+          __pattern1 = __fail: 
+            if v1.__tag == "Right"
+              then 
+                let
+                  c = v1.__field0;
+                in
+                  module."LocalDependency.Data.Either".Right c
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/profunctor/Data/Profunctor/Choice.purs at 32:1 - 35:16";
+        in
+          __pattern0 (__pattern1 __patternFail);
+      right = module."Data.Functor".map module."LocalDependency.Data.Either".functorEither;
+      "Profunctor0" = __unused: module."LocalDependency.Data.Profunctor".profunctorFn;
+    };
+in
+  {inherit left right splitChoice fanin choiceFn;}
+;
+
+LocalDependency-Data-Profunctor-Closed_default-nix = 
+let
+  module = 
+    { "Control.Semigroupoid" = Control-Semigroupoid_default-nix;
+      "LocalDependency.Data.Profunctor" = LocalDependency-Data-Profunctor_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  Closed-Dict = x: x;
+  closedFunction = 
+    { closed = module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn;
+      "Profunctor0" = __unused: module."LocalDependency.Data.Profunctor".profunctorFn;
+    };
+  closed = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.closed;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/profunctor/Data/Profunctor/Closed.purs at 9:3 - 9:55";
+    in
+      __pattern0 __patternFail;
+in
+  {inherit closed closedFunction;}
+;
+
+LocalDependency-Data-Profunctor-Cochoice_default-nix = 
+let
+  module = 
+    { "LocalDependency.Data.Either" = LocalDependency-Data-Either_default-nix;
+      "LocalDependency.Data.Profunctor" = LocalDependency-Data-Profunctor_default-nix;
+    };
+  Cochoice-Dict = x: x;
+  unright = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.unright;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/profunctor/Data/Profunctor/Cochoice.purs at 9:3 - 9:64";
+    in
+      __pattern0 __patternFail;
+  unleft = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.unleft;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/profunctor/Data/Profunctor/Cochoice.purs at 8:3 - 8:63";
+    in
+      __pattern0 __patternFail;
+in
+  {inherit unleft unright;}
+;
+
+LocalDependency-Data-Profunctor-Costrong_default-nix = 
+let
+  module = 
+    { "LocalDependency.Data.Profunctor" = LocalDependency-Data-Profunctor_default-nix;
+      "LocalDependency.Data.Tuple" = LocalDependency-Data-Tuple_default-nix;
+    };
+  Costrong-Dict = x: x;
+  unsecond = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.unsecond;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/profunctor/Data/Profunctor/Costrong.purs at 9:3 - 9:63";
+    in
+      __pattern0 __patternFail;
+  unfirst = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.unfirst;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/profunctor/Data/Profunctor/Costrong.purs at 8:3 - 8:62";
+    in
+      __pattern0 __patternFail;
+in
+  {inherit unfirst unsecond;}
+;
+
+LocalDependency-Data-Profunctor-Join_default-nix = 
+let
+  module = 
+    { "Control.Category" = Control-Category_default-nix;
+      "Control.Semigroupoid" = Control-Semigroupoid_default-nix;
+      "Data.Eq" = Data-Eq_default-nix;
+      "Data.Monoid" = Data-Monoid_default-nix;
+      "Data.Newtype" = Data-Newtype_default-nix;
+      "Data.Ord" = Data-Ord_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+      "Data.Show" = Data-Show_default-nix;
+      "LocalDependency.Data.Functor.Invariant" = LocalDependency-Data-Functor-Invariant_default-nix;
+      "LocalDependency.Data.Profunctor" = LocalDependency-Data-Profunctor_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  Join = x: x;
+  showJoin = dictShow: 
+    { show = v: 
+        let
+          __pattern0 = __fail: 
+            let
+              x = v;
+            in
+              module."Data.Semigroup".append module."Data.Semigroup".semigroupString "(Join " (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Show".show dictShow x) ")");
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/profunctor/Data/Profunctor/Join.purs at 18:1 - 19:44";
+        in
+          __pattern0 __patternFail;
+    };
+  semigroupJoin = dictSemigroupoid: 
+    { append = v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              a = v;
+              b = v1;
+            in
+              module."Control.Semigroupoid".compose dictSemigroupoid a b;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/profunctor/Data/Profunctor/Join.purs at 21:1 - 22:44";
+        in
+          __pattern0 __patternFail;
+    };
+  ordJoin = dictOrd: dictOrd;
+  newtypeJoin = {"Coercible0" = __unused: module."Prim".undefined;};
+  monoidJoin = dictCategory: 
+    { mempty = module."Control.Category".identity dictCategory;
+      "Semigroup0" = __unused: semigroupJoin (dictCategory."Semigroupoid0" module."Prim".undefined);
+    };
+  invariantJoin = dictProfunctor: 
+    { imap = f: g: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              g1 = g;
+              a = v;
+            in
+              module."LocalDependency.Data.Profunctor".dimap dictProfunctor g1 f1 a;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/profunctor/Data/Profunctor/Join.purs at 27:1 - 28:41";
+        in
+          __pattern0 __patternFail;
+    };
+  eqJoin = dictEq: dictEq;
+in
+  {inherit Join newtypeJoin eqJoin ordJoin showJoin semigroupJoin monoidJoin invariantJoin;}
+;
+
+LocalDependency-Data-Profunctor-Split_default-nix = 
+let
+  module = 
+    { "Control.Category" = Control-Category_default-nix;
+      "Control.Semigroupoid" = Control-Semigroupoid_default-nix;
+      "Data.Function" = Data-Function_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "LocalDependency.Data.Exists" = LocalDependency-Data-Exists_default-nix;
+      "LocalDependency.Data.Functor.Invariant" = LocalDependency-Data-Functor-Invariant_default-nix;
+      "LocalDependency.Data.Profunctor" = LocalDependency-Data-Profunctor_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  SplitF = value0: value1: value2: 
+    { __tag = "SplitF";
+      __field0 = value0;
+      __field1 = value1;
+      __field2 = value2;
+    };
+  Split = x: x;
+  unSplit = f: v: 
+    let
+      __pattern0 = __fail: 
+        let
+          f1 = f;
+          e = v;
+        in
+          module."LocalDependency.Data.Exists".runExists 
+          ( v1: 
+            let
+              __pattern0 = __fail: 
+                if v1.__tag == "SplitF"
+                  then 
+                    let
+                      g = v1.__field0;
+                      h = v1.__field1;
+                      fx = v1.__field2;
+                    in
+                      f1 g h fx
+                  else __fail;
+              __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/profunctor/Data/Profunctor/Split.purs at 30:34 - 30:62";
+            in
+              __pattern0 __patternFail
+          ) e;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/profunctor/Data/Profunctor/Split.purs at 29:1 - 29:92";
+    in
+      __pattern0 __patternFail;
+  split = f: g: fx: module."LocalDependency.Data.Exists".mkExists (SplitF f g fx);
+  profunctorSplit = {dimap = f: g: unSplit (h: i: split (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn h f) (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn g i));};
+  lowerSplit = dictInvariant: unSplit (module."Data.Function".flip (module."LocalDependency.Data.Functor.Invariant".imap dictInvariant));
+  liftSplit = split (module."Control.Category".identity module."Control.Category".categoryFn) (module."Control.Category".identity module."Control.Category".categoryFn);
+  hoistSplit = nat: unSplit (f: g: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (split f g) nat);
+  functorSplit = {map = f: unSplit (g: h: fx: split g (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn f h) fx);};
+in
+  {inherit split unSplit liftSplit lowerSplit hoistSplit functorSplit profunctorSplit;}
+;
+
+LocalDependency-Data-Profunctor-Star_default-nix = 
+let
+  module = 
+    { "Control.Applicative" = Control-Applicative_default-nix;
+      "Control.Apply" = Control-Apply_default-nix;
+      "Control.Bind" = Control-Bind_default-nix;
+      "Control.Category" = Control-Category_default-nix;
+      "Control.Monad" = Control-Monad_default-nix;
+      "Control.Semigroupoid" = Control-Semigroupoid_default-nix;
+      "Data.Function" = Data-Function_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.Newtype" = Data-Newtype_default-nix;
+      "LocalDependency.Control.Alt" = LocalDependency-Control-Alt_default-nix;
+      "LocalDependency.Control.Alternative" = LocalDependency-Control-Alternative_default-nix;
+      "LocalDependency.Control.MonadPlus" = LocalDependency-Control-MonadPlus_default-nix;
+      "LocalDependency.Control.MonadZero" = LocalDependency-Control-MonadZero_default-nix;
+      "LocalDependency.Control.Plus" = LocalDependency-Control-Plus_default-nix;
+      "LocalDependency.Data.Distributive" = LocalDependency-Data-Distributive_default-nix;
+      "LocalDependency.Data.Either" = LocalDependency-Data-Either_default-nix;
+      "LocalDependency.Data.Functor.Invariant" = LocalDependency-Data-Functor-Invariant_default-nix;
+      "LocalDependency.Data.Profunctor" = LocalDependency-Data-Profunctor_default-nix;
+      "LocalDependency.Data.Profunctor.Choice" = LocalDependency-Data-Profunctor-Choice_default-nix;
+      "LocalDependency.Data.Profunctor.Closed" = LocalDependency-Data-Profunctor-Closed_default-nix;
+      "LocalDependency.Data.Profunctor.Strong" = LocalDependency-Data-Profunctor-Strong_default-nix;
+      "LocalDependency.Data.Tuple" = LocalDependency-Data-Tuple_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  Star = x: x;
+  semigroupoidStar = dictBind: 
+    { compose = v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              f = v;
+              g = v1;
+            in
+              x: module."Control.Bind".bind dictBind (g x) f;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/profunctor/Data/Profunctor/Star.purs at 29:1 - 30:51";
+        in
+          __pattern0 __patternFail;
+    };
+  profunctorStar = dictFunctor: 
+    { dimap = f: g: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              g1 = g;
+              ft = v;
+            in
+              module."Control.Semigroupoid".composeFlipped module."Control.Semigroupoid".semigroupoidFn f1 (module."Control.Semigroupoid".composeFlipped module."Control.Semigroupoid".semigroupoidFn ft (module."Data.Functor".map dictFunctor g1));
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/profunctor/Data/Profunctor/Star.purs at 68:1 - 69:50";
+        in
+          __pattern0 __patternFail;
+    };
+  strongStar = dictFunctor: 
+    { first = v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f = v;
+            in
+              v1: 
+              let
+                __pattern0 = __fail: 
+                  if v1.__tag == "Tuple"
+                    then 
+                      let
+                        s = v1.__field0;
+                        x = v1.__field1;
+                      in
+                        module."Data.Functor".map dictFunctor (v2: module."LocalDependency.Data.Tuple".Tuple v2 x) (f s)
+                    else __fail;
+                __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/profunctor/Data/Profunctor/Star.purs at 72:26 - 72:65";
+              in
+                __pattern0 __patternFail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/profunctor/Data/Profunctor/Star.purs at 71:1 - 73:61";
+        in
+          __pattern0 __patternFail;
+      second = v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f = v;
+            in
+              v1: 
+              let
+                __pattern0 = __fail: 
+                  if v1.__tag == "Tuple"
+                    then 
+                      let
+                        x = v1.__field0;
+                        s = v1.__field1;
+                      in
+                        module."Data.Functor".map dictFunctor (module."LocalDependency.Data.Tuple".Tuple x) (f s)
+                    else __fail;
+                __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/profunctor/Data/Profunctor/Star.purs at 73:26 - 73:61";
+              in
+                __pattern0 __patternFail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/profunctor/Data/Profunctor/Star.purs at 71:1 - 73:61";
+        in
+          __pattern0 __patternFail;
+      "Profunctor0" = __unused: profunctorStar dictFunctor;
+    };
+  newtypeStar = {"Coercible0" = __unused: module."Prim".undefined;};
+  invariantStar = dictInvariant: 
+    { imap = f: g: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              g1 = g;
+              h = v;
+            in
+              module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."LocalDependency.Data.Functor.Invariant".imap dictInvariant f1 g1) h;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/profunctor/Data/Profunctor/Star.purs at 38:1 - 39:44";
+        in
+          __pattern0 __patternFail;
+    };
+  hoistStar = f: v: 
+    let
+      __pattern0 = __fail: 
+        let
+          f1 = f;
+          g = v;
+        in
+          module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn f1 g;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/profunctor/Data/Profunctor/Star.purs at 82:1 - 82:66";
+    in
+      __pattern0 __patternFail;
+  functorStar = dictFunctor: 
+    { map = f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              g = v;
+            in
+              module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Data.Functor".map dictFunctor f1) g;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/profunctor/Data/Profunctor/Star.purs at 35:1 - 36:38";
+        in
+          __pattern0 __patternFail;
+    };
+  distributiveStar = dictDistributive: 
+    { distribute = dictFunctor: f: a: module."LocalDependency.Data.Distributive".collect dictDistributive dictFunctor 
+        ( v: 
+          let
+            __pattern0 = __fail: 
+              let
+                g = v;
+              in
+                g a;
+            __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/profunctor/Data/Profunctor/Star.purs at 65:38 - 65:54";
+          in
+            __pattern0 __patternFail
+        ) f;
+      collect = dictFunctor: f: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."LocalDependency.Data.Distributive".distribute (distributiveStar dictDistributive) dictFunctor) (module."Data.Functor".map dictFunctor f);
+      "Functor0" = __unused: functorStar (dictDistributive."Functor0" module."Prim".undefined);
+    };
+  closedStar = dictDistributive: 
+    { closed = v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f = v;
+            in
+              g: module."LocalDependency.Data.Distributive".distribute dictDistributive module."Data.Functor".functorFn (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn f g);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/profunctor/Data/Profunctor/Star.purs at 79:1 - 80:52";
+        in
+          __pattern0 __patternFail;
+      "Profunctor0" = __unused: profunctorStar (dictDistributive."Functor0" module."Prim".undefined);
+    };
+  choiceStar = dictApplicative: 
+    { left = v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f = v;
+            in
+              module."Data.Function".apply Star (module."LocalDependency.Data.Either".either (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."LocalDependency.Data.Either".Left) f) (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Control.Applicative".pure dictApplicative) module."LocalDependency.Data.Either".Right));
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/profunctor/Data/Profunctor/Star.purs at 75:1 - 77:67";
+        in
+          __pattern0 __patternFail;
+      right = v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f = v;
+            in
+              module."Data.Function".apply Star (module."LocalDependency.Data.Either".either (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Control.Applicative".pure dictApplicative) module."LocalDependency.Data.Either".Left) (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."LocalDependency.Data.Either".Right) f));
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/profunctor/Data/Profunctor/Star.purs at 75:1 - 77:67";
+        in
+          __pattern0 __patternFail;
+      "Profunctor0" = __unused: profunctorStar ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined);
+    };
+  categoryStar = dictMonad: 
+    { identity = module."Control.Applicative".pure (dictMonad."Applicative0" module."Prim".undefined);
+      "Semigroupoid0" = __unused: semigroupoidStar (dictMonad."Bind1" module."Prim".undefined);
+    };
+  applyStar = dictApply: 
+    { apply = v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              f = v;
+              g = v1;
+            in
+              a: module."Control.Apply".apply dictApply (f a) (g a);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/profunctor/Data/Profunctor/Star.purs at 41:1 - 42:51";
+        in
+          __pattern0 __patternFail;
+      "Functor0" = __unused: functorStar (dictApply."Functor0" module."Prim".undefined);
+    };
+  bindStar = dictBind: 
+    { bind = v: f: 
+        let
+          __pattern0 = __fail: 
+            let
+              m = v;
+              f1 = f;
+            in
+              x: module."Control.Bind".bind dictBind (m x) 
+              ( a: 
+                let
+                  v1 = f1 a;
+                in
+                  
+                  let
+                    __pattern0 = __fail: 
+                      let
+                        g = v1;
+                      in
+                        g x;
+                    __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/profunctor/Data/Profunctor/Star.purs at 48:46 - 48:71";
+                  in
+                    __pattern0 __patternFail
+              );
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/profunctor/Data/Profunctor/Star.purs at 47:1 - 48:71";
+        in
+          __pattern0 __patternFail;
+      "Apply0" = __unused: applyStar (dictBind."Apply0" module."Prim".undefined);
+    };
+  applicativeStar = dictApplicative: 
+    { pure = a: v: module."Control.Applicative".pure dictApplicative a;
+      "Apply0" = __unused: applyStar (dictApplicative."Apply0" module."Prim".undefined);
+    };
+  monadStar = dictMonad: 
+    { "Applicative0" = __unused: applicativeStar (dictMonad."Applicative0" module."Prim".undefined);
+      "Bind1" = __unused: bindStar (dictMonad."Bind1" module."Prim".undefined);
+    };
+  altStar = dictAlt: 
+    { alt = v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              f = v;
+              g = v1;
+            in
+              a: module."LocalDependency.Control.Alt".alt dictAlt (f a) (g a);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/profunctor/Data/Profunctor/Star.purs at 52:1 - 53:49";
+        in
+          __pattern0 __patternFail;
+      "Functor0" = __unused: functorStar (dictAlt."Functor0" module."Prim".undefined);
+    };
+  plusStar = dictPlus: 
+    { empty = v: module."LocalDependency.Control.Plus".empty dictPlus;
+      "Alt0" = __unused: altStar (dictPlus."Alt0" module."Prim".undefined);
+    };
+  alternativeStar = dictAlternative: 
+    { "Applicative0" = __unused: applicativeStar (dictAlternative."Applicative0" module."Prim".undefined);
+      "Plus1" = __unused: plusStar (dictAlternative."Plus1" module."Prim".undefined);
+    };
+  monadPlusStar = dictMonadPlus: 
+    { "Monad0" = __unused: monadStar (dictMonadPlus."Monad0" module."Prim".undefined);
+      "Alternative1" = __unused: alternativeStar (dictMonadPlus."Alternative1" module."Prim".undefined);
+    };
+  monadZeroStar = dictMonadZero: 
+    { "Monad0" = __unused: monadStar (dictMonadZero."Monad0" module."Prim".undefined);
+      "Alternative1" = __unused: alternativeStar (dictMonadZero."Alternative1" module."Prim".undefined);
+      "MonadZeroIsDeprecated2" = __unused: module."Prim".undefined;
+    };
+in
+  {inherit Star hoistStar newtypeStar semigroupoidStar categoryStar functorStar invariantStar applyStar applicativeStar bindStar monadStar altStar plusStar alternativeStar monadZeroStar monadPlusStar distributiveStar profunctorStar strongStar choiceStar closedStar;}
+;
+
+LocalDependency-Data-Profunctor-Strong_default-nix = 
+let
+  module = 
+    { "Control.Category" = Control-Category_default-nix;
+      "Control.Semigroupoid" = Control-Semigroupoid_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "LocalDependency.Data.Profunctor" = LocalDependency-Data-Profunctor_default-nix;
+      "LocalDependency.Data.Tuple" = LocalDependency-Data-Tuple_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  Strong-Dict = x: x;
+  strongFn = 
+    { first = a2b: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple"
+              then 
+                let
+                  a2b1 = a2b;
+                  a = v.__field0;
+                  c = v.__field1;
+                in
+                  module."LocalDependency.Data.Tuple".Tuple (a2b1 a) c
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/profunctor/Data/Profunctor/Strong.purs at 32:1 - 34:17";
+        in
+          __pattern0 __patternFail;
+      second = module."Data.Functor".map module."LocalDependency.Data.Tuple".functorTuple;
+      "Profunctor0" = __unused: module."LocalDependency.Data.Profunctor".profunctorFn;
+    };
+  second = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.second;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/profunctor/Data/Profunctor/Strong.purs at 30:3 - 30:61";
+    in
+      __pattern0 __patternFail;
+  first = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.first;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/profunctor/Data/Profunctor/Strong.purs at 29:3 - 29:60";
+    in
+      __pattern0 __patternFail;
+  splitStrong = dictCategory: dictStrong: l: r: module."Control.Semigroupoid".composeFlipped (dictCategory."Semigroupoid0" module."Prim".undefined) (first dictStrong l) (second dictStrong r);
+  fanout = dictCategory: dictStrong: l: r: 
+    let
+      split = module."LocalDependency.Data.Profunctor".dimap (dictStrong."Profunctor0" module."Prim".undefined) (module."Control.Category".identity module."Control.Category".categoryFn) (a: module."LocalDependency.Data.Tuple".Tuple a a) (module."Control.Category".identity dictCategory);
+    in
+      module."Control.Semigroupoid".composeFlipped (dictCategory."Semigroupoid0" module."Prim".undefined) split (splitStrong dictCategory dictStrong l r);
+in
+  {inherit first second splitStrong fanout strongFn;}
+;
+
+LocalDependency-Data-Profunctor_default-nix = 
+let
+  module = 
+    { "Control.Category" = Control-Category_default-nix;
+      "Control.Semigroupoid" = Control-Semigroupoid_default-nix;
+      "Data.Newtype" = Data-Newtype_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  Profunctor-Dict = x: x;
+  profunctorFn = {dimap = a2b: c2d: b2c: module."Control.Semigroupoid".composeFlipped module."Control.Semigroupoid".semigroupoidFn a2b (module."Control.Semigroupoid".composeFlipped module."Control.Semigroupoid".semigroupoidFn b2c c2d);};
+  dimap = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.dimap;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/profunctor/Data/Profunctor.purs at 23:3 - 23:66";
+    in
+      __pattern0 __patternFail;
+  lcmap = dictProfunctor: a2b: dimap dictProfunctor a2b (module."Control.Category".identity module."Control.Category".categoryFn);
+  rmap = dictProfunctor: b2c: dimap dictProfunctor (module."Control.Category".identity module."Control.Category".categoryFn) b2c;
+  unwrapIso = dictProfunctor: dictNewtype: dimap dictProfunctor (module."Data.Newtype".wrap module."Prim".undefined) (module."Data.Newtype".unwrap module."Prim".undefined);
+  wrapIso = dictProfunctor: dictNewtype: v: dimap dictProfunctor (module."Data.Newtype".unwrap module."Prim".undefined) (module."Data.Newtype".wrap module."Prim".undefined);
+  arr = dictCategory: dictProfunctor: f: rmap dictProfunctor f (module."Control.Category".identity dictCategory);
+in
+  {inherit dimap lcmap rmap arr unwrapIso wrapIso profunctorFn;}
+;
+
+LocalDependency-Data-Semigroup-Foldable_default-nix = 
+let
+  module = 
+    { "Control.Apply" = Control-Apply_default-nix;
+      "Control.Category" = Control-Category_default-nix;
+      "Control.Semigroupoid" = Control-Semigroupoid_default-nix;
+      "Data.Eq" = Data-Eq_default-nix;
+      "Data.Function" = Data-Function_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.Monoid.Dual" = Data-Monoid-Dual_default-nix;
+      "Data.Monoid.Multiplicative" = Data-Monoid-Multiplicative_default-nix;
+      "Data.Newtype" = Data-Newtype_default-nix;
+      "Data.Ord.Max" = Data-Ord-Max_default-nix;
+      "Data.Ord.Min" = Data-Ord-Min_default-nix;
+      "Data.Ordering" = Data-Ordering_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+      "Data.Unit" = Data-Unit_default-nix;
+      "LocalDependency.Data.Foldable" = LocalDependency-Data-Foldable_default-nix;
+      "LocalDependency.Data.Identity" = LocalDependency-Data-Identity_default-nix;
+      "LocalDependency.Data.Tuple" = LocalDependency-Data-Tuple_default-nix;
+      "Prelude" = Prelude_default-nix;
+      "Prim.TypeError" = import ../Prim.TypeError;
+    };
+  JoinWith = x: x;
+  Foldable1-Dict = x: x;
+  FoldRight1 = value0: value1: 
+    { __tag = "FoldRight1";
+      __field0 = value0;
+      __field1 = value1;
+    };
+  Act = x: x;
+  semigroupJoinWith = dictSemigroup: 
+    { append = v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              a = v;
+              b = v1;
+            in
+              module."Data.Function".apply JoinWith (j: module."Data.Semigroup".append dictSemigroup (a j) (module."Data.Semigroup".append dictSemigroup j (b j)));
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Semigroup/Foldable.purs at 156:1 - 157:70";
+        in
+          __pattern0 __patternFail;
+    };
+  semigroupAct = dictApply: 
+    { append = v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              a = v;
+              b = v1;
+            in
+              module."Control.Apply".applySecond dictApply a b;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Semigroup/Foldable.purs at 118:1 - 119:40";
+        in
+          __pattern0 __patternFail;
+    };
+  runFoldRight1 = v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "FoldRight1"
+          then 
+            let
+              f = v.__field0;
+              a = v.__field1;
+            in
+              f a
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Semigroup/Foldable.purs at 183:1 - 183:62";
+    in
+      __pattern0 __patternFail;
+  mkFoldRight1 = FoldRight1 module."Data.Function".const;
+  joinee = v: 
+    let
+      __pattern0 = __fail: 
+        let
+          x = v;
+        in
+          x;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Semigroup/Foldable.purs at 153:1 - 153:41";
+    in
+      __pattern0 __patternFail;
+  getAct = v: 
+    let
+      __pattern0 = __fail: 
+        let
+          f = v;
+        in
+          f;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Semigroup/Foldable.purs at 115:1 - 115:37";
+    in
+      __pattern0 __patternFail;
+  foldr1 = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.foldr1;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Semigroup/Foldable.purs at 52:3 - 52:48";
+    in
+      __pattern0 __patternFail;
+  foldl1 = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.foldl1;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Semigroup/Foldable.purs at 53:3 - 53:48";
+    in
+      __pattern0 __patternFail;
+  maximumBy = dictFoldable1: cmp: foldl1 dictFoldable1 
+    ( x: y: 
+      let
+        __pattern0 = __fail: if module."Data.Eq".eq module."Data.Ordering".eqOrdering (cmp x y) module."Data.Ordering".GT then x else __fail;
+        __pattern1 = __fail: y;
+        __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Semigroup/Foldable.purs at 142:32 - 142:62";
+      in
+        __pattern0 (__pattern1 __patternFail)
+    );
+  minimumBy = dictFoldable1: cmp: foldl1 dictFoldable1 
+    ( x: y: 
+      let
+        __pattern0 = __fail: if module."Data.Eq".eq module."Data.Ordering".eqOrdering (cmp x y) module."Data.Ordering".LT then x else __fail;
+        __pattern1 = __fail: y;
+        __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Semigroup/Foldable.purs at 148:32 - 148:62";
+      in
+        __pattern0 (__pattern1 __patternFail)
+    );
+  foldableTuple = 
+    { foldMap1 = dictSemigroup: f: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple"
+              then 
+                let
+                  f1 = f;
+                  x = v.__field1;
+                in
+                  f1 x
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Semigroup/Foldable.purs at 98:1 - 101:27";
+        in
+          __pattern0 __patternFail;
+      foldr1 = v: v1: 
+        let
+          __pattern0 = __fail: 
+            if v1.__tag == "Tuple"
+              then 
+                let
+                  x = v1.__field1;
+                in
+                  x
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Semigroup/Foldable.purs at 98:1 - 101:27";
+        in
+          __pattern0 __patternFail;
+      foldl1 = v: v1: 
+        let
+          __pattern0 = __fail: 
+            if v1.__tag == "Tuple"
+              then 
+                let
+                  x = v1.__field1;
+                in
+                  x
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Semigroup/Foldable.purs at 98:1 - 101:27";
+        in
+          __pattern0 __patternFail;
+      "Foldable0" = __unused: module."LocalDependency.Data.Foldable".foldableTuple;
+    };
+  foldableMultiplicative = 
+    { foldr1 = v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              x = v1;
+            in
+              x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Semigroup/Foldable.purs at 93:1 - 96:38";
+        in
+          __pattern0 __patternFail;
+      foldl1 = v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              x = v1;
+            in
+              x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Semigroup/Foldable.purs at 93:1 - 96:38";
+        in
+          __pattern0 __patternFail;
+      foldMap1 = dictSemigroup: f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              x = v;
+            in
+              f1 x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Semigroup/Foldable.purs at 93:1 - 96:38";
+        in
+          __pattern0 __patternFail;
+      "Foldable0" = __unused: module."LocalDependency.Data.Foldable".foldableMultiplicative;
+    };
+  foldableIdentity = 
+    { foldMap1 = dictSemigroup: f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              x = v;
+            in
+              f1 x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Semigroup/Foldable.purs at 103:1 - 106:28";
+        in
+          __pattern0 __patternFail;
+      foldl1 = v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              x = v1;
+            in
+              x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Semigroup/Foldable.purs at 103:1 - 106:28";
+        in
+          __pattern0 __patternFail;
+      foldr1 = v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              x = v1;
+            in
+              x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Semigroup/Foldable.purs at 103:1 - 106:28";
+        in
+          __pattern0 __patternFail;
+      "Foldable0" = __unused: module."LocalDependency.Data.Foldable".foldableIdentity;
+    };
+  foldableDual = 
+    { foldr1 = v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              x = v1;
+            in
+              x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Semigroup/Foldable.purs at 88:1 - 91:28";
+        in
+          __pattern0 __patternFail;
+      foldl1 = v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              x = v1;
+            in
+              x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Semigroup/Foldable.purs at 88:1 - 91:28";
+        in
+          __pattern0 __patternFail;
+      foldMap1 = dictSemigroup: f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              x = v;
+            in
+              f1 x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Semigroup/Foldable.purs at 88:1 - 91:28";
+        in
+          __pattern0 __patternFail;
+      "Foldable0" = __unused: module."LocalDependency.Data.Foldable".foldableDual;
+    };
+  foldRight1Semigroup = 
+    { append = v: v1: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "FoldRight1" && v1.__tag == "FoldRight1"
+              then 
+                let
+                  lf = v.__field0;
+                  lr = v.__field1;
+                  rf = v1.__field0;
+                  rr = v1.__field1;
+                in
+                  FoldRight1 (a: f: lf (f lr (rf a f)) f) rr
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Semigroup/Foldable.purs at 177:1 - 178:94";
+        in
+          __pattern0 __patternFail;
+    };
+  foldMap1DefaultR = dictFoldable1: dictFunctor: dictSemigroup: f: module."Control.Semigroupoid".composeFlipped module."Control.Semigroupoid".semigroupoidFn (module."Data.Functor".map dictFunctor f) (foldr1 dictFoldable1 (module."Data.Semigroup".append dictSemigroup));
+  foldMap1DefaultL = dictFoldable1: dictFunctor: dictSemigroup: f: module."Control.Semigroupoid".composeFlipped module."Control.Semigroupoid".semigroupoidFn (module."Data.Functor".map dictFunctor f) (foldl1 dictFoldable1 (module."Data.Semigroup".append dictSemigroup));
+  foldMap1Default = dictWarn: dictFoldable1: dictFunctor: dictSemigroup: foldMap1DefaultL dictFoldable1 dictFunctor dictSemigroup;
+  foldMap1 = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.foldMap1;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Semigroup/Foldable.purs at 54:3 - 54:62";
+    in
+      __pattern0 __patternFail;
+  foldl1Default = dictFoldable1: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Data.Function".flip (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn runFoldRight1 (module."Data.Newtype".alaF module."Prim".undefined module."Prim".undefined module."Prim".undefined module."Prim".undefined module."Data.Monoid.Dual".Dual (foldMap1 dictFoldable1 (module."Data.Monoid.Dual".semigroupDual foldRight1Semigroup)) mkFoldRight1))) module."Data.Function".flip;
+  foldr1Default = dictFoldable1: module."Data.Function".flip (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn runFoldRight1 (foldMap1 dictFoldable1 foldRight1Semigroup mkFoldRight1));
+  intercalateMap = dictFoldable1: dictSemigroup: j: f: foldable: joinee (foldMap1 dictFoldable1 (semigroupJoinWith dictSemigroup) (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn JoinWith (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."Data.Function".const f)) foldable) j;
+  intercalate = dictFoldable1: dictSemigroup: module."Data.Function".flip (intercalateMap dictFoldable1 dictSemigroup) (module."Control.Category".identity module."Control.Category".categoryFn);
+  maximum = dictOrd: dictFoldable1: module."Data.Newtype".ala module."Prim".undefined module."Prim".undefined module."Prim".undefined module."Data.Ord.Max".Max (foldMap1 dictFoldable1 (module."Data.Ord.Max".semigroupMax dictOrd));
+  minimum = dictOrd: dictFoldable1: module."Data.Newtype".ala module."Prim".undefined module."Prim".undefined module."Prim".undefined module."Data.Ord.Min".Min (foldMap1 dictFoldable1 (module."Data.Ord.Min".semigroupMin dictOrd));
+  traverse1_ = dictFoldable1: dictApply: f: t: module."Data.Functor".voidRight (dictApply."Functor0" module."Prim".undefined) module."Data.Unit".unit (getAct (foldMap1 dictFoldable1 (semigroupAct dictApply) (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn Act f) t));
+  for1_ = dictFoldable1: dictApply: module."Data.Function".flip (traverse1_ dictFoldable1 dictApply);
+  sequence1_ = dictFoldable1: dictApply: traverse1_ dictFoldable1 dictApply (module."Control.Category".identity module."Control.Category".categoryFn);
+  fold1 = dictFoldable1: dictSemigroup: foldMap1 dictFoldable1 dictSemigroup (module."Control.Category".identity module."Control.Category".categoryFn);
+in
+  {inherit foldMap1 fold1 foldr1 foldl1 traverse1_ for1_ sequence1_ foldr1Default foldl1Default foldMap1DefaultR foldMap1DefaultL foldMap1Default intercalate intercalateMap maximum maximumBy minimum minimumBy foldableDual foldableMultiplicative foldableTuple foldableIdentity;}
+;
+
+LocalDependency-Data-Semigroup-Traversable_default-nix = 
+let
+  module = 
+    { "Control.Category" = Control-Category_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.Monoid.Dual" = Data-Monoid-Dual_default-nix;
+      "Data.Monoid.Multiplicative" = Data-Monoid-Multiplicative_default-nix;
+      "LocalDependency.Data.Identity" = LocalDependency-Data-Identity_default-nix;
+      "LocalDependency.Data.Semigroup.Foldable" = LocalDependency-Data-Semigroup-Foldable_default-nix;
+      "LocalDependency.Data.Traversable" = LocalDependency-Data-Traversable_default-nix;
+      "LocalDependency.Data.Tuple" = LocalDependency-Data-Tuple_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  Traversable1-Dict = x: x;
+  traverse1 = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.traverse1;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Semigroup/Traversable.purs at 36:3 - 36:69";
+    in
+      __pattern0 __patternFail;
+  traversableTuple = 
+    { traverse1 = dictApply: f: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple"
+              then 
+                let
+                  f1 = f;
+                  x = v.__field0;
+                  y = v.__field1;
+                in
+                  module."Data.Functor".map (dictApply."Functor0" module."Prim".undefined) (module."LocalDependency.Data.Tuple".Tuple x) (f1 y)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Semigroup/Traversable.purs at 47:1 - 49:40";
+        in
+          __pattern0 __patternFail;
+      sequence1 = dictApply: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple"
+              then 
+                let
+                  x = v.__field0;
+                  y = v.__field1;
+                in
+                  module."Data.Functor".map (dictApply."Functor0" module."Prim".undefined) (module."LocalDependency.Data.Tuple".Tuple x) y
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Semigroup/Traversable.purs at 47:1 - 49:40";
+        in
+          __pattern0 __patternFail;
+      "Foldable10" = __unused: module."LocalDependency.Data.Semigroup.Foldable".foldableTuple;
+      "Traversable1" = __unused: module."LocalDependency.Data.Traversable".traversableTuple;
+    };
+  traversableIdentity = 
+    { traverse1 = dictApply: f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              x = v;
+            in
+              module."Data.Functor".map (dictApply."Functor0" module."Prim".undefined) module."LocalDependency.Data.Identity".Identity (f1 x);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Semigroup/Traversable.purs at 51:1 - 53:42";
+        in
+          __pattern0 __patternFail;
+      sequence1 = dictApply: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              x = v;
+            in
+              module."Data.Functor".map (dictApply."Functor0" module."Prim".undefined) module."LocalDependency.Data.Identity".Identity x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Semigroup/Traversable.purs at 51:1 - 53:42";
+        in
+          __pattern0 __patternFail;
+      "Foldable10" = __unused: module."LocalDependency.Data.Semigroup.Foldable".foldableIdentity;
+      "Traversable1" = __unused: module."LocalDependency.Data.Traversable".traversableIdentity;
+    };
+  sequence1Default = dictTraversable1: dictApply: traverse1 dictTraversable1 dictApply (module."Control.Category".identity module."Control.Category".categoryFn);
+  traversableDual = 
+    { traverse1 = dictApply: f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              x = v;
+            in
+              module."Data.Functor".map (dictApply."Functor0" module."Prim".undefined) module."Data.Monoid.Dual".Dual (f1 x);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Semigroup/Traversable.purs at 39:1 - 41:31";
+        in
+          __pattern0 __patternFail;
+      sequence1 = dictApply: sequence1Default traversableDual dictApply;
+      "Foldable10" = __unused: module."LocalDependency.Data.Semigroup.Foldable".foldableDual;
+      "Traversable1" = __unused: module."LocalDependency.Data.Traversable".traversableDual;
+    };
+  traversableMultiplicative = 
+    { traverse1 = dictApply: f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              x = v;
+            in
+              module."Data.Functor".map (dictApply."Functor0" module."Prim".undefined) module."Data.Monoid.Multiplicative".Multiplicative (f1 x);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Semigroup/Traversable.purs at 43:1 - 45:31";
+        in
+          __pattern0 __patternFail;
+      sequence1 = dictApply: sequence1Default traversableMultiplicative dictApply;
+      "Foldable10" = __unused: module."LocalDependency.Data.Semigroup.Foldable".foldableMultiplicative;
+      "Traversable1" = __unused: module."LocalDependency.Data.Traversable".traversableMultiplicative;
+    };
+  sequence1 = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.sequence1;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Semigroup/Traversable.purs at 37:3 - 37:57";
+    in
+      __pattern0 __patternFail;
+  traverse1Default = dictTraversable1: dictApply: f: ta: sequence1 dictTraversable1 dictApply (module."Data.Functor".map ((dictTraversable1."Traversable1" module."Prim".undefined)."Functor0" module."Prim".undefined) f ta);
+in
+  {inherit sequence1 traverse1 traverse1Default sequence1Default traversableDual traversableMultiplicative traversableTuple traversableIdentity;}
+;
+
+LocalDependency-Data-Traversable-Accum-Internal_default-nix = 
+let
+  module = 
+    { "Control.Applicative" = Control-Applicative_default-nix;
+      "Control.Apply" = Control-Apply_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "LocalDependency.Data.Traversable.Accum" = LocalDependency-Data-Traversable-Accum_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  StateR = x: x;
+  StateL = x: x;
+  stateR = v: 
+    let
+      __pattern0 = __fail: 
+        let
+          k = v;
+        in
+          k;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable/Accum/Internal.purs at 31:1 - 31:51";
+    in
+      __pattern0 __patternFail;
+  stateL = v: 
+    let
+      __pattern0 = __fail: 
+        let
+          k = v;
+        in
+          k;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable/Accum/Internal.purs at 13:1 - 13:51";
+    in
+      __pattern0 __patternFail;
+  functorStateR = 
+    { map = f: k: s: 
+        let
+          v = stateR k s;
+        in
+          
+          let
+            __pattern0 = __fail: 
+              let
+                s1 = v.accum;
+                a = v.value;
+              in
+                
+                { accum = s1;
+                  value = f a;
+                };
+            __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable/Accum/Internal.purs at 35:26 - 36:57";
+          in
+            __pattern0 __patternFail;
+    };
+  functorStateL = 
+    { map = f: k: s: 
+        let
+          v = stateL k s;
+        in
+          
+          let
+            __pattern0 = __fail: 
+              let
+                s1 = v.accum;
+                a = v.value;
+              in
+                
+                { accum = s1;
+                  value = f a;
+                };
+            __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable/Accum/Internal.purs at 17:26 - 18:57";
+          in
+            __pattern0 __patternFail;
+    };
+  applyStateR = 
+    { apply = f: x: s: 
+        let
+          v = stateR x s;
+        in
+          
+          let
+            __pattern0 = __fail: 
+              let
+                s1 = v.accum;
+                x' = v.value;
+              in
+                
+                let
+                  v1 = stateR f s1;
+                in
+                  
+                  let
+                    __pattern0 = __fail: 
+                      let
+                        s2 = v1.accum;
+                        f' = v1.value;
+                      in
+                        
+                        { accum = s2;
+                          value = f' x';
+                        };
+                    __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable/Accum/Internal.purs at 40:33 - 41:62";
+                  in
+                    __pattern0 __patternFail;
+            __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable/Accum/Internal.purs at 39:28 - 41:62";
+          in
+            __pattern0 __patternFail;
+      "Functor0" = __unused: functorStateR;
+    };
+  applyStateL = 
+    { apply = f: x: s: 
+        let
+          v = stateL f s;
+        in
+          
+          let
+            __pattern0 = __fail: 
+              let
+                s1 = v.accum;
+                f' = v.value;
+              in
+                
+                let
+                  v1 = stateL x s1;
+                in
+                  
+                  let
+                    __pattern0 = __fail: 
+                      let
+                        s2 = v1.accum;
+                        x' = v1.value;
+                      in
+                        
+                        { accum = s2;
+                          value = f' x';
+                        };
+                    __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable/Accum/Internal.purs at 22:33 - 23:62";
+                  in
+                    __pattern0 __patternFail;
+            __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable/Accum/Internal.purs at 21:28 - 23:62";
+          in
+            __pattern0 __patternFail;
+      "Functor0" = __unused: functorStateL;
+    };
+  applicativeStateR = 
+    { pure = a: s: 
+        { accum = s;
+          value = a;
+        };
+      "Apply0" = __unused: applyStateR;
+    };
+  applicativeStateL = 
+    { pure = a: s: 
+        { accum = s;
+          value = a;
+        };
+      "Apply0" = __unused: applyStateL;
+    };
+in
+  {inherit StateL stateL StateR stateR functorStateL applyStateL applicativeStateL functorStateR applyStateR applicativeStateR;}
+;
+
+LocalDependency-Data-Traversable-Accum_default-nix = 
+let
+  module = { };
+in
+  { }
+;
+
+LocalDependency-Data-Traversable_default-nix = 
+let
+  module = 
+    { "Control.Applicative" = Control-Applicative_default-nix;
+      "Control.Apply" = Control-Apply_default-nix;
+      "Control.Category" = Control-Category_default-nix;
+      "Control.Semigroupoid" = Control-Semigroupoid_default-nix;
+      "Data.Function" = Data-Function_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.Monoid.Additive" = Data-Monoid-Additive_default-nix;
+      "Data.Monoid.Conj" = Data-Monoid-Conj_default-nix;
+      "Data.Monoid.Disj" = Data-Monoid-Disj_default-nix;
+      "Data.Monoid.Dual" = Data-Monoid-Dual_default-nix;
+      "Data.Monoid.Multiplicative" = Data-Monoid-Multiplicative_default-nix;
+      "LocalDependency.Data.Const" = LocalDependency-Data-Const_default-nix;
+      "LocalDependency.Data.Either" = LocalDependency-Data-Either_default-nix;
+      "LocalDependency.Data.Foldable" = LocalDependency-Data-Foldable_default-nix;
+      "LocalDependency.Data.Functor.App" = LocalDependency-Data-Functor-App_default-nix;
+      "LocalDependency.Data.Functor.Compose" = LocalDependency-Data-Functor-Compose_default-nix;
+      "LocalDependency.Data.Functor.Coproduct" = LocalDependency-Data-Functor-Coproduct_default-nix;
+      "LocalDependency.Data.Functor.Product" = LocalDependency-Data-Functor-Product_default-nix;
+      "LocalDependency.Data.Identity" = LocalDependency-Data-Identity_default-nix;
+      "LocalDependency.Data.Maybe" = LocalDependency-Data-Maybe_default-nix;
+      "LocalDependency.Data.Maybe.First" = LocalDependency-Data-Maybe-First_default-nix;
+      "LocalDependency.Data.Maybe.Last" = LocalDependency-Data-Maybe-Last_default-nix;
+      "LocalDependency.Data.Traversable.Accum" = LocalDependency-Data-Traversable-Accum_default-nix;
+      "LocalDependency.Data.Traversable.Accum.Internal" = LocalDependency-Data-Traversable-Accum-Internal_default-nix;
+      "LocalDependency.Data.Tuple" = LocalDependency-Data-Tuple_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  foreign = LocalDependency-Data-Traversable_foreign-nix;
+  traverseArrayImpl = foreign.traverseArrayImpl;
+  Traversable-Dict = x: x;
+  traverse = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.traverse;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable.purs at 80:3 - 80:74";
+    in
+      __pattern0 __patternFail;
+  traversableTuple = 
+    { traverse = dictApplicative: f: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple"
+              then 
+                let
+                  f1 = f;
+                  x = v.__field0;
+                  y = v.__field1;
+                in
+                  module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) (module."LocalDependency.Data.Tuple".Tuple x) (f1 y)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable.purs at 155:1 - 157:39";
+        in
+          __pattern0 __patternFail;
+      sequence = dictApplicative: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple"
+              then 
+                let
+                  x = v.__field0;
+                  y = v.__field1;
+                in
+                  module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) (module."LocalDependency.Data.Tuple".Tuple x) y
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable.purs at 155:1 - 157:39";
+        in
+          __pattern0 __patternFail;
+      "Functor0" = __unused: module."LocalDependency.Data.Tuple".functorTuple;
+      "Foldable1" = __unused: module."LocalDependency.Data.Foldable".foldableTuple;
+    };
+  traversableMultiplicative = 
+    { traverse = dictApplicative: f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              x = v;
+            in
+              module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."Data.Monoid.Multiplicative".Multiplicative (f1 x);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable.purs at 145:1 - 147:53";
+        in
+          __pattern0 __patternFail;
+      sequence = dictApplicative: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              x = v;
+            in
+              module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."Data.Monoid.Multiplicative".Multiplicative x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable.purs at 145:1 - 147:53";
+        in
+          __pattern0 __patternFail;
+      "Functor0" = __unused: module."Data.Monoid.Multiplicative".functorMultiplicative;
+      "Foldable1" = __unused: module."LocalDependency.Data.Foldable".foldableMultiplicative;
+    };
+  traversableMaybe = 
+    { traverse = dictApplicative: v: v1: 
+        let
+          __pattern0 = __fail: if v1.__tag == "Nothing" then module."Control.Applicative".pure dictApplicative module."LocalDependency.Data.Maybe".Nothing else __fail;
+          __pattern1 = __fail: 
+            if v1.__tag == "Just"
+              then 
+                let
+                  f = v;
+                  x = v1.__field0;
+                in
+                  module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."LocalDependency.Data.Maybe".Just (f x)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable.purs at 115:1 - 119:33";
+        in
+          __pattern0 (__pattern1 __patternFail);
+      sequence = dictApplicative: v: 
+        let
+          __pattern0 = __fail: if v.__tag == "Nothing" then module."Control.Applicative".pure dictApplicative module."LocalDependency.Data.Maybe".Nothing else __fail;
+          __pattern1 = __fail: 
+            if v.__tag == "Just"
+              then 
+                let
+                  x = v.__field0;
+                in
+                  module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."LocalDependency.Data.Maybe".Just x
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable.purs at 115:1 - 119:33";
+        in
+          __pattern0 (__pattern1 __patternFail);
+      "Functor0" = __unused: module."LocalDependency.Data.Maybe".functorMaybe;
+      "Foldable1" = __unused: module."LocalDependency.Data.Foldable".foldableMaybe;
+    };
+  traversableIdentity = 
+    { traverse = dictApplicative: f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              x = v;
+            in
+              module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."LocalDependency.Data.Identity".Identity (f1 x);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable.purs at 159:1 - 161:41";
+        in
+          __pattern0 __patternFail;
+      sequence = dictApplicative: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              x = v;
+            in
+              module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."LocalDependency.Data.Identity".Identity x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable.purs at 159:1 - 161:41";
+        in
+          __pattern0 __patternFail;
+      "Functor0" = __unused: module."LocalDependency.Data.Identity".functorIdentity;
+      "Foldable1" = __unused: module."LocalDependency.Data.Foldable".foldableIdentity;
+    };
+  traversableEither = 
+    { traverse = dictApplicative: v: v1: 
+        let
+          __pattern0 = __fail: 
+            if v1.__tag == "Left"
+              then 
+                let
+                  x = v1.__field0;
+                in
+                  module."Control.Applicative".pure dictApplicative (module."LocalDependency.Data.Either".Left x)
+              else __fail;
+          __pattern1 = __fail: 
+            if v1.__tag == "Right"
+              then 
+                let
+                  f = v;
+                  x = v1.__field0;
+                in
+                  module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."LocalDependency.Data.Either".Right (f x)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable.purs at 149:1 - 153:36";
+        in
+          __pattern0 (__pattern1 __patternFail);
+      sequence = dictApplicative: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Left"
+              then 
+                let
+                  x = v.__field0;
+                in
+                  module."Control.Applicative".pure dictApplicative (module."LocalDependency.Data.Either".Left x)
+              else __fail;
+          __pattern1 = __fail: 
+            if v.__tag == "Right"
+              then 
+                let
+                  x = v.__field0;
+                in
+                  module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."LocalDependency.Data.Either".Right x
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable.purs at 149:1 - 153:36";
+        in
+          __pattern0 (__pattern1 __patternFail);
+      "Functor0" = __unused: module."LocalDependency.Data.Either".functorEither;
+      "Foldable1" = __unused: module."LocalDependency.Data.Foldable".foldableEither;
+    };
+  traversableDual = 
+    { traverse = dictApplicative: f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              x = v;
+            in
+              module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."Data.Monoid.Dual".Dual (f1 x);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable.purs at 133:1 - 135:33";
+        in
+          __pattern0 __patternFail;
+      sequence = dictApplicative: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              x = v;
+            in
+              module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."Data.Monoid.Dual".Dual x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable.purs at 133:1 - 135:33";
+        in
+          __pattern0 __patternFail;
+      "Functor0" = __unused: module."Data.Monoid.Dual".functorDual;
+      "Foldable1" = __unused: module."LocalDependency.Data.Foldable".foldableDual;
+    };
+  traversableDisj = 
+    { traverse = dictApplicative: f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              x = v;
+            in
+              module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."Data.Monoid.Disj".Disj (f1 x);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable.purs at 141:1 - 143:33";
+        in
+          __pattern0 __patternFail;
+      sequence = dictApplicative: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              x = v;
+            in
+              module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."Data.Monoid.Disj".Disj x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable.purs at 141:1 - 143:33";
+        in
+          __pattern0 __patternFail;
+      "Functor0" = __unused: module."Data.Monoid.Disj".functorDisj;
+      "Foldable1" = __unused: module."LocalDependency.Data.Foldable".foldableDisj;
+    };
+  traversableConst = 
+    { traverse = dictApplicative: v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              x = v1;
+            in
+              module."Control.Applicative".pure dictApplicative x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable.purs at 163:1 - 165:38";
+        in
+          __pattern0 __patternFail;
+      sequence = dictApplicative: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              x = v;
+            in
+              module."Control.Applicative".pure dictApplicative x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable.purs at 163:1 - 165:38";
+        in
+          __pattern0 __patternFail;
+      "Functor0" = __unused: module."LocalDependency.Data.Const".functorConst;
+      "Foldable1" = __unused: module."LocalDependency.Data.Foldable".foldableConst;
+    };
+  traversableConj = 
+    { traverse = dictApplicative: f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              x = v;
+            in
+              module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."Data.Monoid.Conj".Conj (f1 x);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable.purs at 137:1 - 139:33";
+        in
+          __pattern0 __patternFail;
+      sequence = dictApplicative: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              x = v;
+            in
+              module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."Data.Monoid.Conj".Conj x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable.purs at 137:1 - 139:33";
+        in
+          __pattern0 __patternFail;
+      "Functor0" = __unused: module."Data.Monoid.Conj".functorConj;
+      "Foldable1" = __unused: module."LocalDependency.Data.Foldable".foldableConj;
+    };
+  traversableCompose = dictTraversable: dictTraversable1: 
+    { traverse = dictApplicative: f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              fga = v;
+            in
+              module."Data.Function".apply (module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."LocalDependency.Data.Functor.Compose".Compose) (traverse dictTraversable dictApplicative (traverse dictTraversable1 dictApplicative f1) fga);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable.purs at 179:1 - 181:31";
+        in
+          __pattern0 __patternFail;
+      sequence = dictApplicative: traverse (traversableCompose dictTraversable dictTraversable1) dictApplicative (module."Control.Category".identity module."Control.Category".categoryFn);
+      "Functor0" = __unused: module."LocalDependency.Data.Functor.Compose".functorCompose (dictTraversable."Functor0" module."Prim".undefined) (dictTraversable1."Functor0" module."Prim".undefined);
+      "Foldable1" = __unused: module."LocalDependency.Data.Foldable".foldableCompose (dictTraversable."Foldable1" module."Prim".undefined) (dictTraversable1."Foldable1" module."Prim".undefined);
+    };
+  traversableAdditive = 
+    { traverse = dictApplicative: f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              x = v;
+            in
+              module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."Data.Monoid.Additive".Additive (f1 x);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable.purs at 129:1 - 131:41";
+        in
+          __pattern0 __patternFail;
+      sequence = dictApplicative: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              x = v;
+            in
+              module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."Data.Monoid.Additive".Additive x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable.purs at 129:1 - 131:41";
+        in
+          __pattern0 __patternFail;
+      "Functor0" = __unused: module."Data.Monoid.Additive".functorAdditive;
+      "Foldable1" = __unused: module."LocalDependency.Data.Foldable".foldableAdditive;
+    };
+  sequenceDefault = dictTraversable: dictApplicative: traverse dictTraversable dictApplicative (module."Control.Category".identity module."Control.Category".categoryFn);
+  traversableArray = 
+    { traverse = dictApplicative: traverseArrayImpl (module."Control.Apply".apply (dictApplicative."Apply0" module."Prim".undefined)) (module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined)) (module."Control.Applicative".pure dictApplicative);
+      sequence = dictApplicative: sequenceDefault traversableArray dictApplicative;
+      "Functor0" = __unused: module."Data.Functor".functorArray;
+      "Foldable1" = __unused: module."LocalDependency.Data.Foldable".foldableArray;
+    };
+  sequence = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.sequence;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable.purs at 81:3 - 81:62";
+    in
+      __pattern0 __patternFail;
+  traversableApp = dictTraversable: 
+    { traverse = dictApplicative: f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              x = v;
+            in
+              module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."LocalDependency.Data.Functor.App".App (traverse dictTraversable dictApplicative f1 x);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable.purs at 183:1 - 185:40";
+        in
+          __pattern0 __patternFail;
+      sequence = dictApplicative: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              x = v;
+            in
+              module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."LocalDependency.Data.Functor.App".App (sequence dictTraversable dictApplicative x);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable.purs at 183:1 - 185:40";
+        in
+          __pattern0 __patternFail;
+      "Functor0" = __unused: module."LocalDependency.Data.Functor.App".functorApp (dictTraversable."Functor0" module."Prim".undefined);
+      "Foldable1" = __unused: module."LocalDependency.Data.Foldable".foldableApp (dictTraversable."Foldable1" module."Prim".undefined);
+    };
+  traversableCoproduct = dictTraversable: dictTraversable1: 
+    { traverse = dictApplicative: f: module."LocalDependency.Data.Functor.Coproduct".coproduct (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."LocalDependency.Data.Functor.Coproduct".Coproduct module."LocalDependency.Data.Either".Left)) (traverse dictTraversable dictApplicative f)) (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."LocalDependency.Data.Functor.Coproduct".Coproduct module."LocalDependency.Data.Either".Right)) (traverse dictTraversable1 dictApplicative f));
+      sequence = dictApplicative: module."LocalDependency.Data.Functor.Coproduct".coproduct (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."LocalDependency.Data.Functor.Coproduct".Coproduct module."LocalDependency.Data.Either".Left)) (sequence dictTraversable dictApplicative)) (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."LocalDependency.Data.Functor.Coproduct".Coproduct module."LocalDependency.Data.Either".Right)) (sequence dictTraversable1 dictApplicative));
+      "Functor0" = __unused: module."LocalDependency.Data.Functor.Coproduct".functorCoproduct (dictTraversable."Functor0" module."Prim".undefined) (dictTraversable1."Functor0" module."Prim".undefined);
+      "Foldable1" = __unused: module."LocalDependency.Data.Foldable".foldableCoproduct (dictTraversable."Foldable1" module."Prim".undefined) (dictTraversable1."Foldable1" module."Prim".undefined);
+    };
+  traversableFirst = 
+    { traverse = dictApplicative: f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              x = v;
+            in
+              module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."LocalDependency.Data.Maybe.First".First (traverse traversableMaybe dictApplicative f1 x);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable.purs at 121:1 - 123:44";
+        in
+          __pattern0 __patternFail;
+      sequence = dictApplicative: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              x = v;
+            in
+              module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."LocalDependency.Data.Maybe.First".First (sequence traversableMaybe dictApplicative x);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable.purs at 121:1 - 123:44";
+        in
+          __pattern0 __patternFail;
+      "Functor0" = __unused: module."LocalDependency.Data.Maybe.First".functorFirst;
+      "Foldable1" = __unused: module."LocalDependency.Data.Foldable".foldableFirst;
+    };
+  traversableLast = 
+    { traverse = dictApplicative: f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              x = v;
+            in
+              module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."LocalDependency.Data.Maybe.Last".Last (traverse traversableMaybe dictApplicative f1 x);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable.purs at 125:1 - 127:42";
+        in
+          __pattern0 __patternFail;
+      sequence = dictApplicative: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              x = v;
+            in
+              module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."LocalDependency.Data.Maybe.Last".Last (sequence traversableMaybe dictApplicative x);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable.purs at 125:1 - 127:42";
+        in
+          __pattern0 __patternFail;
+      "Functor0" = __unused: module."LocalDependency.Data.Maybe.Last".functorLast;
+      "Foldable1" = __unused: module."LocalDependency.Data.Foldable".foldableLast;
+    };
+  traversableProduct = dictTraversable: dictTraversable1: 
+    { traverse = dictApplicative: f: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple"
+              then 
+                let
+                  f1 = f;
+                  fa = v.__field0;
+                  ga = v.__field1;
+                in
+                  module."Control.Apply".lift2 (dictApplicative."Apply0" module."Prim".undefined) module."LocalDependency.Data.Functor.Product".product (traverse dictTraversable dictApplicative f1 fa) (traverse dictTraversable1 dictApplicative f1 ga)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable.purs at 167:1 - 169:79";
+        in
+          __pattern0 __patternFail;
+      sequence = dictApplicative: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple"
+              then 
+                let
+                  fa = v.__field0;
+                  ga = v.__field1;
+                in
+                  module."Control.Apply".lift2 (dictApplicative."Apply0" module."Prim".undefined) module."LocalDependency.Data.Functor.Product".product (sequence dictTraversable dictApplicative fa) (sequence dictTraversable1 dictApplicative ga)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/Traversable.purs at 167:1 - 169:79";
+        in
+          __pattern0 __patternFail;
+      "Functor0" = __unused: module."LocalDependency.Data.Functor.Product".functorProduct (dictTraversable."Functor0" module."Prim".undefined) (dictTraversable1."Functor0" module."Prim".undefined);
+      "Foldable1" = __unused: module."LocalDependency.Data.Foldable".foldableProduct (dictTraversable."Foldable1" module."Prim".undefined) (dictTraversable1."Foldable1" module."Prim".undefined);
+    };
+  traverseDefault = dictTraversable: dictApplicative: f: ta: sequence dictTraversable dictApplicative (module."Data.Functor".map (dictTraversable."Functor0" module."Prim".undefined) f ta);
+  mapAccumR = dictTraversable: f: s0: xs: module."LocalDependency.Data.Traversable.Accum.Internal".stateR (traverse dictTraversable module."LocalDependency.Data.Traversable.Accum.Internal".applicativeStateR (a: s: f s a) xs) s0;
+  scanr = dictTraversable: f: b0: xs: 
+    ( mapAccumR dictTraversable 
+      ( b: a: 
+        let
+          b' = f a b;
+        in
+          
+          { accum = b';
+            value = b';
+          }
+      ) b0 xs
+    ).value;
+  mapAccumL = dictTraversable: f: s0: xs: module."LocalDependency.Data.Traversable.Accum.Internal".stateL (traverse dictTraversable module."LocalDependency.Data.Traversable.Accum.Internal".applicativeStateL (a: s: f s a) xs) s0;
+  scanl = dictTraversable: f: b0: xs: 
+    ( mapAccumL dictTraversable 
+      ( b: a: 
+        let
+          b' = f b a;
+        in
+          
+          { accum = b';
+            value = b';
+          }
+      ) b0 xs
+    ).value;
+  for = dictApplicative: dictTraversable: x: f: traverse dictTraversable dictApplicative f x;
+in
+  
+  { inherit traverse sequence traverseDefault sequenceDefault for scanl scanr mapAccumL mapAccumR traversableArray traversableMaybe traversableFirst traversableLast traversableAdditive traversableDual traversableConj traversableDisj traversableMultiplicative traversableEither traversableTuple traversableIdentity traversableConst traversableProduct traversableCoproduct traversableCompose traversableApp;
+    inherit (module."LocalDependency.Data.Foldable") all and any elem find fold foldMap foldMapDefaultL foldMapDefaultR foldl foldlDefault foldr foldrDefault for_ intercalate maximum maximumBy minimum minimumBy notElem oneOf or- sequence_ sum traverse_;
+    inherit (module."LocalDependency.Data.Traversable.Accum");
+  }
+;
+
+LocalDependency-Data-Traversable_foreign-nix = let
+  # This is foldr from nixpkgs/lib/lists.nix
+  foldr = op: nul: list:
+    let
+      len = builtins.length list;
+      fold' = n:
+        if n == len
+        then nul
+        else op (builtins.elemAt list n) (fold' (n + 1));
+    in fold' 0;
+in
+{
+  # type:
+  #    forall m a b
+  #  . (forall x y. m (x -> y) -> m x -> m y)  # apply
+  # -> (forall x y. (x -> y) -> m x -> m y)    # fmap
+  # -> (forall x. x -> m x)                    # pure
+  # -> (a -> m b)                              # f
+  # -> Array a
+  # -> m (Array b)
+  #
+  # Implementation is based on Haskell's Data.Traversable [] instance.
+  traverseArrayImpl = apply: fmap: pure: f: arr:
+    let
+      # :: forall x. x -> Array x -> Array x
+      cons = m: ms: [m] ++ ms;
+      # :: a -> m (Array b) -> m (Array b)
+      cons_f = x: ys: apply (fmap cons (f x)) ys;
+    in
+    foldr cons_f (pure []) arr;
+}
+
+;
+
+LocalDependency-Data-TraversableWithIndex_default-nix = 
+let
+  module = 
+    { "Control.Applicative" = Control-Applicative_default-nix;
+      "Control.Apply" = Control-Apply_default-nix;
+      "Control.Semigroupoid" = Control-Semigroupoid_default-nix;
+      "Data.Function" = Data-Function_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.Monoid.Additive" = Data-Monoid-Additive_default-nix;
+      "Data.Monoid.Conj" = Data-Monoid-Conj_default-nix;
+      "Data.Monoid.Disj" = Data-Monoid-Disj_default-nix;
+      "Data.Monoid.Dual" = Data-Monoid-Dual_default-nix;
+      "Data.Monoid.Multiplicative" = Data-Monoid-Multiplicative_default-nix;
+      "Data.Unit" = Data-Unit_default-nix;
+      "LocalDependency.Data.Const" = LocalDependency-Data-Const_default-nix;
+      "LocalDependency.Data.Either" = LocalDependency-Data-Either_default-nix;
+      "LocalDependency.Data.FoldableWithIndex" = LocalDependency-Data-FoldableWithIndex_default-nix;
+      "LocalDependency.Data.Functor.App" = LocalDependency-Data-Functor-App_default-nix;
+      "LocalDependency.Data.Functor.Compose" = LocalDependency-Data-Functor-Compose_default-nix;
+      "LocalDependency.Data.Functor.Coproduct" = LocalDependency-Data-Functor-Coproduct_default-nix;
+      "LocalDependency.Data.Functor.Product" = LocalDependency-Data-Functor-Product_default-nix;
+      "LocalDependency.Data.FunctorWithIndex" = LocalDependency-Data-FunctorWithIndex_default-nix;
+      "LocalDependency.Data.Identity" = LocalDependency-Data-Identity_default-nix;
+      "LocalDependency.Data.Maybe" = LocalDependency-Data-Maybe_default-nix;
+      "LocalDependency.Data.Maybe.First" = LocalDependency-Data-Maybe-First_default-nix;
+      "LocalDependency.Data.Maybe.Last" = LocalDependency-Data-Maybe-Last_default-nix;
+      "LocalDependency.Data.Traversable" = LocalDependency-Data-Traversable_default-nix;
+      "LocalDependency.Data.Traversable.Accum" = LocalDependency-Data-Traversable-Accum_default-nix;
+      "LocalDependency.Data.Traversable.Accum.Internal" = LocalDependency-Data-Traversable-Accum-Internal_default-nix;
+      "LocalDependency.Data.Tuple" = LocalDependency-Data-Tuple_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  TraversableWithIndex-Dict = x: x;
+  traverseWithIndexDefault = dictTraversableWithIndex: dictApplicative: f: module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."LocalDependency.Data.Traversable".sequence (dictTraversableWithIndex."Traversable2" module."Prim".undefined) dictApplicative) (module."LocalDependency.Data.FunctorWithIndex".mapWithIndex (dictTraversableWithIndex."FunctorWithIndex0" module."Prim".undefined) f);
+  traverseWithIndex = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.traverseWithIndex;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/TraversableWithIndex.purs at 56:3 - 56:88";
+    in
+      __pattern0 __patternFail;
+  traverseDefault = dictTraversableWithIndex: dictApplicative: f: traverseWithIndex dictTraversableWithIndex dictApplicative (module."Data.Function".const f);
+  traversableWithIndexTuple = 
+    { traverseWithIndex = dictApplicative: f: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple"
+              then 
+                let
+                  f1 = f;
+                  x = v.__field0;
+                  y = v.__field1;
+                in
+                  module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) (module."LocalDependency.Data.Tuple".Tuple x) (f1 module."Data.Unit".unit y)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/TraversableWithIndex.purs at 99:1 - 100:57";
+        in
+          __pattern0 __patternFail;
+      "FunctorWithIndex0" = __unused: module."LocalDependency.Data.FunctorWithIndex".functorWithIndexTuple;
+      "FoldableWithIndex1" = __unused: module."LocalDependency.Data.FoldableWithIndex".foldableWithIndexTuple;
+      "Traversable2" = __unused: module."LocalDependency.Data.Traversable".traversableTuple;
+    };
+  traversableWithIndexProduct = dictTraversableWithIndex: dictTraversableWithIndex1: 
+    { traverseWithIndex = dictApplicative: f: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple"
+              then 
+                let
+                  f1 = f;
+                  fa = v.__field0;
+                  ga = v.__field1;
+                in
+                  module."Control.Apply".lift2 (dictApplicative."Apply0" module."Prim".undefined) module."LocalDependency.Data.Functor.Product".product (traverseWithIndex dictTraversableWithIndex dictApplicative (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn f1 module."LocalDependency.Data.Either".Left) fa) (traverseWithIndex dictTraversableWithIndex1 dictApplicative (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn f1 module."LocalDependency.Data.Either".Right) ga)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/TraversableWithIndex.purs at 108:1 - 109:135";
+        in
+          __pattern0 __patternFail;
+      "FunctorWithIndex0" = __unused: module."LocalDependency.Data.FunctorWithIndex".functorWithIndexProduct (dictTraversableWithIndex."FunctorWithIndex0" module."Prim".undefined) (dictTraversableWithIndex1."FunctorWithIndex0" module."Prim".undefined);
+      "FoldableWithIndex1" = __unused: module."LocalDependency.Data.FoldableWithIndex".foldableWithIndexProduct (dictTraversableWithIndex."FoldableWithIndex1" module."Prim".undefined) (dictTraversableWithIndex1."FoldableWithIndex1" module."Prim".undefined);
+      "Traversable2" = __unused: module."LocalDependency.Data.Traversable".traversableProduct (dictTraversableWithIndex."Traversable2" module."Prim".undefined) (dictTraversableWithIndex1."Traversable2" module."Prim".undefined);
+    };
+  traversableWithIndexMultiplicative = 
+    { traverseWithIndex = dictApplicative: f: module."Data.Function".apply (module."LocalDependency.Data.Traversable".traverse module."LocalDependency.Data.Traversable".traversableMultiplicative dictApplicative) (f module."Data.Unit".unit);
+      "FunctorWithIndex0" = __unused: module."LocalDependency.Data.FunctorWithIndex".functorWithIndexMultiplicative;
+      "FoldableWithIndex1" = __unused: module."LocalDependency.Data.FoldableWithIndex".foldableWithIndexMultiplicative;
+      "Traversable2" = __unused: module."LocalDependency.Data.Traversable".traversableMultiplicative;
+    };
+  traversableWithIndexMaybe = 
+    { traverseWithIndex = dictApplicative: f: module."Data.Function".apply (module."LocalDependency.Data.Traversable".traverse module."LocalDependency.Data.Traversable".traversableMaybe dictApplicative) (f module."Data.Unit".unit);
+      "FunctorWithIndex0" = __unused: module."LocalDependency.Data.FunctorWithIndex".functorWithIndexMaybe;
+      "FoldableWithIndex1" = __unused: module."LocalDependency.Data.FoldableWithIndex".foldableWithIndexMaybe;
+      "Traversable2" = __unused: module."LocalDependency.Data.Traversable".traversableMaybe;
+    };
+  traversableWithIndexLast = 
+    { traverseWithIndex = dictApplicative: f: module."Data.Function".apply (module."LocalDependency.Data.Traversable".traverse module."LocalDependency.Data.Traversable".traversableLast dictApplicative) (f module."Data.Unit".unit);
+      "FunctorWithIndex0" = __unused: module."LocalDependency.Data.FunctorWithIndex".functorWithIndexLast;
+      "FoldableWithIndex1" = __unused: module."LocalDependency.Data.FoldableWithIndex".foldableWithIndexLast;
+      "Traversable2" = __unused: module."LocalDependency.Data.Traversable".traversableLast;
+    };
+  traversableWithIndexIdentity = 
+    { traverseWithIndex = dictApplicative: f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              x = v;
+            in
+              module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."LocalDependency.Data.Identity".Identity (f1 module."Data.Unit".unit x);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/TraversableWithIndex.purs at 102:1 - 103:59";
+        in
+          __pattern0 __patternFail;
+      "FunctorWithIndex0" = __unused: module."LocalDependency.Data.FunctorWithIndex".functorWithIndexIdentity;
+      "FoldableWithIndex1" = __unused: module."LocalDependency.Data.FoldableWithIndex".foldableWithIndexIdentity;
+      "Traversable2" = __unused: module."LocalDependency.Data.Traversable".traversableIdentity;
+    };
+  traversableWithIndexFirst = 
+    { traverseWithIndex = dictApplicative: f: module."Data.Function".apply (module."LocalDependency.Data.Traversable".traverse module."LocalDependency.Data.Traversable".traversableFirst dictApplicative) (f module."Data.Unit".unit);
+      "FunctorWithIndex0" = __unused: module."LocalDependency.Data.FunctorWithIndex".functorWithIndexFirst;
+      "FoldableWithIndex1" = __unused: module."LocalDependency.Data.FoldableWithIndex".foldableWithIndexFirst;
+      "Traversable2" = __unused: module."LocalDependency.Data.Traversable".traversableFirst;
+    };
+  traversableWithIndexEither = 
+    { traverseWithIndex = dictApplicative: v: v1: 
+        let
+          __pattern0 = __fail: 
+            if v1.__tag == "Left"
+              then 
+                let
+                  x = v1.__field0;
+                in
+                  module."Control.Applicative".pure dictApplicative (module."LocalDependency.Data.Either".Left x)
+              else __fail;
+          __pattern1 = __fail: 
+            if v1.__tag == "Right"
+              then 
+                let
+                  f = v;
+                  x = v1.__field0;
+                in
+                  module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."LocalDependency.Data.Either".Right (f module."Data.Unit".unit x)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/TraversableWithIndex.purs at 95:1 - 97:53";
+        in
+          __pattern0 (__pattern1 __patternFail);
+      "FunctorWithIndex0" = __unused: module."LocalDependency.Data.FunctorWithIndex".functorWithIndexEither;
+      "FoldableWithIndex1" = __unused: module."LocalDependency.Data.FoldableWithIndex".foldableWithIndexEither;
+      "Traversable2" = __unused: module."LocalDependency.Data.Traversable".traversableEither;
+    };
+  traversableWithIndexDual = 
+    { traverseWithIndex = dictApplicative: f: module."Data.Function".apply (module."LocalDependency.Data.Traversable".traverse module."LocalDependency.Data.Traversable".traversableDual dictApplicative) (f module."Data.Unit".unit);
+      "FunctorWithIndex0" = __unused: module."LocalDependency.Data.FunctorWithIndex".functorWithIndexDual;
+      "FoldableWithIndex1" = __unused: module."LocalDependency.Data.FoldableWithIndex".foldableWithIndexDual;
+      "Traversable2" = __unused: module."LocalDependency.Data.Traversable".traversableDual;
+    };
+  traversableWithIndexDisj = 
+    { traverseWithIndex = dictApplicative: f: module."Data.Function".apply (module."LocalDependency.Data.Traversable".traverse module."LocalDependency.Data.Traversable".traversableDisj dictApplicative) (f module."Data.Unit".unit);
+      "FunctorWithIndex0" = __unused: module."LocalDependency.Data.FunctorWithIndex".functorWithIndexDisj;
+      "FoldableWithIndex1" = __unused: module."LocalDependency.Data.FoldableWithIndex".foldableWithIndexDisj;
+      "Traversable2" = __unused: module."LocalDependency.Data.Traversable".traversableDisj;
+    };
+  traversableWithIndexCoproduct = dictTraversableWithIndex: dictTraversableWithIndex1: 
+    { traverseWithIndex = dictApplicative: f: module."LocalDependency.Data.Functor.Coproduct".coproduct (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."LocalDependency.Data.Functor.Coproduct".Coproduct module."LocalDependency.Data.Either".Left)) (traverseWithIndex dictTraversableWithIndex dictApplicative (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn f module."LocalDependency.Data.Either".Left))) (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn module."LocalDependency.Data.Functor.Coproduct".Coproduct module."LocalDependency.Data.Either".Right)) (traverseWithIndex dictTraversableWithIndex1 dictApplicative (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn f module."LocalDependency.Data.Either".Right)));
+      "FunctorWithIndex0" = __unused: module."LocalDependency.Data.FunctorWithIndex".functorWithIndexCoproduct (dictTraversableWithIndex."FunctorWithIndex0" module."Prim".undefined) (dictTraversableWithIndex1."FunctorWithIndex0" module."Prim".undefined);
+      "FoldableWithIndex1" = __unused: module."LocalDependency.Data.FoldableWithIndex".foldableWithIndexCoproduct (dictTraversableWithIndex."FoldableWithIndex1" module."Prim".undefined) (dictTraversableWithIndex1."FoldableWithIndex1" module."Prim".undefined);
+      "Traversable2" = __unused: module."LocalDependency.Data.Traversable".traversableCoproduct (dictTraversableWithIndex."Traversable2" module."Prim".undefined) (dictTraversableWithIndex1."Traversable2" module."Prim".undefined);
+    };
+  traversableWithIndexConst = 
+    { traverseWithIndex = dictApplicative: v: v1: 
+        let
+          __pattern0 = __fail: 
+            let
+              x = v1;
+            in
+              module."Control.Applicative".pure dictApplicative x;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/TraversableWithIndex.purs at 105:1 - 106:49";
+        in
+          __pattern0 __patternFail;
+      "FunctorWithIndex0" = __unused: module."LocalDependency.Data.FunctorWithIndex".functorWithIndexConst;
+      "FoldableWithIndex1" = __unused: module."LocalDependency.Data.FoldableWithIndex".foldableWithIndexConst;
+      "Traversable2" = __unused: module."LocalDependency.Data.Traversable".traversableConst;
+    };
+  traversableWithIndexConj = 
+    { traverseWithIndex = dictApplicative: f: module."Data.Function".apply (module."LocalDependency.Data.Traversable".traverse module."LocalDependency.Data.Traversable".traversableConj dictApplicative) (f module."Data.Unit".unit);
+      "FunctorWithIndex0" = __unused: module."LocalDependency.Data.FunctorWithIndex".functorWithIndexConj;
+      "FoldableWithIndex1" = __unused: module."LocalDependency.Data.FoldableWithIndex".foldableWithIndexConj;
+      "Traversable2" = __unused: module."LocalDependency.Data.Traversable".traversableConj;
+    };
+  traversableWithIndexCompose = dictTraversableWithIndex: dictTraversableWithIndex1: 
+    { traverseWithIndex = dictApplicative: f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              fga = v;
+            in
+              module."Data.Function".apply (module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."LocalDependency.Data.Functor.Compose".Compose) (traverseWithIndex dictTraversableWithIndex dictApplicative (module."Control.Semigroupoid".compose module."Control.Semigroupoid".semigroupoidFn (traverseWithIndex dictTraversableWithIndex1 dictApplicative) (module."LocalDependency.Data.Tuple".curry f1)) fga);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/TraversableWithIndex.purs at 116:1 - 117:106";
+        in
+          __pattern0 __patternFail;
+      "FunctorWithIndex0" = __unused: module."LocalDependency.Data.FunctorWithIndex".functorWithIndexCompose (dictTraversableWithIndex."FunctorWithIndex0" module."Prim".undefined) (dictTraversableWithIndex1."FunctorWithIndex0" module."Prim".undefined);
+      "FoldableWithIndex1" = __unused: module."LocalDependency.Data.FoldableWithIndex".foldableWithIndexCompose (dictTraversableWithIndex."FoldableWithIndex1" module."Prim".undefined) (dictTraversableWithIndex1."FoldableWithIndex1" module."Prim".undefined);
+      "Traversable2" = __unused: module."LocalDependency.Data.Traversable".traversableCompose (dictTraversableWithIndex."Traversable2" module."Prim".undefined) (dictTraversableWithIndex1."Traversable2" module."Prim".undefined);
+    };
+  traversableWithIndexArray = 
+    { traverseWithIndex = dictApplicative: traverseWithIndexDefault traversableWithIndexArray dictApplicative;
+      "FunctorWithIndex0" = __unused: module."LocalDependency.Data.FunctorWithIndex".functorWithIndexArray;
+      "FoldableWithIndex1" = __unused: module."LocalDependency.Data.FoldableWithIndex".foldableWithIndexArray;
+      "Traversable2" = __unused: module."LocalDependency.Data.Traversable".traversableArray;
+    };
+  traversableWithIndexApp = dictTraversableWithIndex: 
+    { traverseWithIndex = dictApplicative: f: v: 
+        let
+          __pattern0 = __fail: 
+            let
+              f1 = f;
+              x = v;
+            in
+              module."Data.Functor".map ((dictApplicative."Apply0" module."Prim".undefined)."Functor0" module."Prim".undefined) module."LocalDependency.Data.Functor.App".App (traverseWithIndex dictTraversableWithIndex dictApplicative f1 x);
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/foldable-traversable/Data/TraversableWithIndex.purs at 119:1 - 120:62";
+        in
+          __pattern0 __patternFail;
+      "FunctorWithIndex0" = __unused: module."LocalDependency.Data.FunctorWithIndex".functorWithIndexApp (dictTraversableWithIndex."FunctorWithIndex0" module."Prim".undefined);
+      "FoldableWithIndex1" = __unused: module."LocalDependency.Data.FoldableWithIndex".foldableWithIndexApp (dictTraversableWithIndex."FoldableWithIndex1" module."Prim".undefined);
+      "Traversable2" = __unused: module."LocalDependency.Data.Traversable".traversableApp (dictTraversableWithIndex."Traversable2" module."Prim".undefined);
+    };
+  traversableWithIndexAdditive = 
+    { traverseWithIndex = dictApplicative: f: module."Data.Function".apply (module."LocalDependency.Data.Traversable".traverse module."LocalDependency.Data.Traversable".traversableAdditive dictApplicative) (f module."Data.Unit".unit);
+      "FunctorWithIndex0" = __unused: module."LocalDependency.Data.FunctorWithIndex".functorWithIndexAdditive;
+      "FoldableWithIndex1" = __unused: module."LocalDependency.Data.FoldableWithIndex".foldableWithIndexAdditive;
+      "Traversable2" = __unused: module."LocalDependency.Data.Traversable".traversableAdditive;
+    };
+  mapAccumRWithIndex = dictTraversableWithIndex: f: s0: xs: module."LocalDependency.Data.Traversable.Accum.Internal".stateR (traverseWithIndex dictTraversableWithIndex module."LocalDependency.Data.Traversable.Accum.Internal".applicativeStateR (i: a: s: f i s a) xs) s0;
+  scanrWithIndex = dictTraversableWithIndex: f: b0: xs: 
+    ( mapAccumRWithIndex dictTraversableWithIndex 
+      ( i: b: a: 
+        let
+          b' = f i a b;
+        in
+          
+          { accum = b';
+            value = b';
+          }
+      ) b0 xs
+    ).value;
+  mapAccumLWithIndex = dictTraversableWithIndex: f: s0: xs: module."LocalDependency.Data.Traversable.Accum.Internal".stateL (traverseWithIndex dictTraversableWithIndex module."LocalDependency.Data.Traversable.Accum.Internal".applicativeStateL (i: a: s: f i s a) xs) s0;
+  scanlWithIndex = dictTraversableWithIndex: f: b0: xs: 
+    ( mapAccumLWithIndex dictTraversableWithIndex 
+      ( i: b: a: 
+        let
+          b' = f i b a;
+        in
+          
+          { accum = b';
+            value = b';
+          }
+      ) b0 xs
+    ).value;
+  forWithIndex = dictApplicative: dictTraversableWithIndex: module."Data.Function".flip (traverseWithIndex dictTraversableWithIndex dictApplicative);
+in
+  
+  { inherit traverseWithIndex traverseWithIndexDefault forWithIndex scanlWithIndex mapAccumLWithIndex scanrWithIndex mapAccumRWithIndex traverseDefault traversableWithIndexArray traversableWithIndexMaybe traversableWithIndexFirst traversableWithIndexLast traversableWithIndexAdditive traversableWithIndexDual traversableWithIndexConj traversableWithIndexDisj traversableWithIndexMultiplicative traversableWithIndexEither traversableWithIndexTuple traversableWithIndexIdentity traversableWithIndexConst traversableWithIndexProduct traversableWithIndexCoproduct traversableWithIndexCompose traversableWithIndexApp;
+    inherit (module."LocalDependency.Data.Traversable.Accum");
+  }
+;
+
+LocalDependency-Data-Tuple-Nested_default-nix = 
+let
+  module = 
+    { "Data.Unit" = Data-Unit_default-nix;
+      "LocalDependency.Data.Tuple" = LocalDependency-Data-Tuple_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  uncurry9 = f': v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple" && v.__field1.__tag == "Tuple" && v.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple"
+          then 
+            let
+              f'1 = f';
+              a = v.__field0;
+              b = v.__field1.__field0;
+              c = v.__field1.__field1.__field0;
+              d = v.__field1.__field1.__field1.__field0;
+              e = v.__field1.__field1.__field1.__field1.__field0;
+              f = v.__field1.__field1.__field1.__field1.__field1.__field0;
+              g = v.__field1.__field1.__field1.__field1.__field1.__field1.__field0;
+              h = v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field0;
+              i = v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field0;
+            in
+              f'1 a b c d e f g h i
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple/Nested.purs at 249:1 - 249:123";
+    in
+      __pattern0 __patternFail;
+  uncurry8 = f': v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple" && v.__field1.__tag == "Tuple" && v.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple"
+          then 
+            let
+              f'1 = f';
+              a = v.__field0;
+              b = v.__field1.__field0;
+              c = v.__field1.__field1.__field0;
+              d = v.__field1.__field1.__field1.__field0;
+              e = v.__field1.__field1.__field1.__field1.__field0;
+              f = v.__field1.__field1.__field1.__field1.__field1.__field0;
+              g = v.__field1.__field1.__field1.__field1.__field1.__field1.__field0;
+              h = v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field0;
+            in
+              f'1 a b c d e f g h
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple/Nested.purs at 245:1 - 245:113";
+    in
+      __pattern0 __patternFail;
+  uncurry7 = f': v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple" && v.__field1.__tag == "Tuple" && v.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple"
+          then 
+            let
+              f'1 = f';
+              a = v.__field0;
+              b = v.__field1.__field0;
+              c = v.__field1.__field1.__field0;
+              d = v.__field1.__field1.__field1.__field0;
+              e = v.__field1.__field1.__field1.__field1.__field0;
+              f = v.__field1.__field1.__field1.__field1.__field1.__field0;
+              g = v.__field1.__field1.__field1.__field1.__field1.__field1.__field0;
+            in
+              f'1 a b c d e f g
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple/Nested.purs at 241:1 - 241:104";
+    in
+      __pattern0 __patternFail;
+  uncurry6 = f': v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple" && v.__field1.__tag == "Tuple" && v.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple"
+          then 
+            let
+              f'1 = f';
+              a = v.__field0;
+              b = v.__field1.__field0;
+              c = v.__field1.__field1.__field0;
+              d = v.__field1.__field1.__field1.__field0;
+              e = v.__field1.__field1.__field1.__field1.__field0;
+              f = v.__field1.__field1.__field1.__field1.__field1.__field0;
+            in
+              f'1 a b c d e f
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple/Nested.purs at 237:1 - 237:95";
+    in
+      __pattern0 __patternFail;
+  uncurry5 = f: v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple" && v.__field1.__tag == "Tuple" && v.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__tag == "Tuple"
+          then 
+            let
+              f1 = f;
+              a = v.__field0;
+              b = v.__field1.__field0;
+              c = v.__field1.__field1.__field0;
+              d = v.__field1.__field1.__field1.__field0;
+              e = v.__field1.__field1.__field1.__field1.__field0;
+            in
+              f1 a b c d e
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple/Nested.purs at 233:1 - 233:86";
+    in
+      __pattern0 __patternFail;
+  uncurry4 = f: v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple" && v.__field1.__tag == "Tuple" && v.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__tag == "Tuple"
+          then 
+            let
+              f1 = f;
+              a = v.__field0;
+              b = v.__field1.__field0;
+              c = v.__field1.__field1.__field0;
+              d = v.__field1.__field1.__field1.__field0;
+            in
+              f1 a b c d
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple/Nested.purs at 229:1 - 229:77";
+    in
+      __pattern0 __patternFail;
+  uncurry3 = f: v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple" && v.__field1.__tag == "Tuple" && v.__field1.__field1.__tag == "Tuple"
+          then 
+            let
+              f1 = f;
+              a = v.__field0;
+              b = v.__field1.__field0;
+              c = v.__field1.__field1.__field0;
+            in
+              f1 a b c
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple/Nested.purs at 225:1 - 225:68";
+    in
+      __pattern0 __patternFail;
+  uncurry2 = f: v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple" && v.__field1.__tag == "Tuple"
+          then 
+            let
+              f1 = f;
+              a = v.__field0;
+              b = v.__field1.__field0;
+            in
+              f1 a b
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple/Nested.purs at 221:1 - 221:59";
+    in
+      __pattern0 __patternFail;
+  uncurry10 = f': v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple" && v.__field1.__tag == "Tuple" && v.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple"
+          then 
+            let
+              f'1 = f';
+              a = v.__field0;
+              b = v.__field1.__field0;
+              c = v.__field1.__field1.__field0;
+              d = v.__field1.__field1.__field1.__field0;
+              e = v.__field1.__field1.__field1.__field1.__field0;
+              f = v.__field1.__field1.__field1.__field1.__field1.__field0;
+              g = v.__field1.__field1.__field1.__field1.__field1.__field1.__field0;
+              h = v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field0;
+              i = v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field0;
+              j = v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field0;
+            in
+              f'1 a b c d e f g h i j
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple/Nested.purs at 253:1 - 253:133";
+    in
+      __pattern0 __patternFail;
+  uncurry1 = f: v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple"
+          then 
+            let
+              f1 = f;
+              a = v.__field0;
+            in
+              f1 a
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple/Nested.purs at 217:1 - 217:50";
+    in
+      __pattern0 __patternFail;
+  tuple9 = a: b: c: d: e: f: g: h: i: module."LocalDependency.Data.Tuple".Tuple a (module."LocalDependency.Data.Tuple".Tuple b (module."LocalDependency.Data.Tuple".Tuple c (module."LocalDependency.Data.Tuple".Tuple d (module."LocalDependency.Data.Tuple".Tuple e (module."LocalDependency.Data.Tuple".Tuple f (module."LocalDependency.Data.Tuple".Tuple g (module."LocalDependency.Data.Tuple".Tuple h (module."LocalDependency.Data.Tuple".Tuple i module."Data.Unit".unit))))))));
+  tuple8 = a: b: c: d: e: f: g: h: module."LocalDependency.Data.Tuple".Tuple a (module."LocalDependency.Data.Tuple".Tuple b (module."LocalDependency.Data.Tuple".Tuple c (module."LocalDependency.Data.Tuple".Tuple d (module."LocalDependency.Data.Tuple".Tuple e (module."LocalDependency.Data.Tuple".Tuple f (module."LocalDependency.Data.Tuple".Tuple g (module."LocalDependency.Data.Tuple".Tuple h module."Data.Unit".unit)))))));
+  tuple7 = a: b: c: d: e: f: g: module."LocalDependency.Data.Tuple".Tuple a (module."LocalDependency.Data.Tuple".Tuple b (module."LocalDependency.Data.Tuple".Tuple c (module."LocalDependency.Data.Tuple".Tuple d (module."LocalDependency.Data.Tuple".Tuple e (module."LocalDependency.Data.Tuple".Tuple f (module."LocalDependency.Data.Tuple".Tuple g module."Data.Unit".unit))))));
+  tuple6 = a: b: c: d: e: f: module."LocalDependency.Data.Tuple".Tuple a (module."LocalDependency.Data.Tuple".Tuple b (module."LocalDependency.Data.Tuple".Tuple c (module."LocalDependency.Data.Tuple".Tuple d (module."LocalDependency.Data.Tuple".Tuple e (module."LocalDependency.Data.Tuple".Tuple f module."Data.Unit".unit)))));
+  tuple5 = a: b: c: d: e: module."LocalDependency.Data.Tuple".Tuple a (module."LocalDependency.Data.Tuple".Tuple b (module."LocalDependency.Data.Tuple".Tuple c (module."LocalDependency.Data.Tuple".Tuple d (module."LocalDependency.Data.Tuple".Tuple e module."Data.Unit".unit))));
+  tuple4 = a: b: c: d: module."LocalDependency.Data.Tuple".Tuple a (module."LocalDependency.Data.Tuple".Tuple b (module."LocalDependency.Data.Tuple".Tuple c (module."LocalDependency.Data.Tuple".Tuple d module."Data.Unit".unit)));
+  tuple3 = a: b: c: module."LocalDependency.Data.Tuple".Tuple a (module."LocalDependency.Data.Tuple".Tuple b (module."LocalDependency.Data.Tuple".Tuple c module."Data.Unit".unit));
+  tuple2 = a: b: module."LocalDependency.Data.Tuple".Tuple a (module."LocalDependency.Data.Tuple".Tuple b module."Data.Unit".unit);
+  tuple10 = a: b: c: d: e: f: g: h: i: j: module."LocalDependency.Data.Tuple".Tuple a (module."LocalDependency.Data.Tuple".Tuple b (module."LocalDependency.Data.Tuple".Tuple c (module."LocalDependency.Data.Tuple".Tuple d (module."LocalDependency.Data.Tuple".Tuple e (module."LocalDependency.Data.Tuple".Tuple f (module."LocalDependency.Data.Tuple".Tuple g (module."LocalDependency.Data.Tuple".Tuple h (module."LocalDependency.Data.Tuple".Tuple i (module."LocalDependency.Data.Tuple".Tuple j module."Data.Unit".unit)))))))));
+  tuple1 = a: module."LocalDependency.Data.Tuple".Tuple a module."Data.Unit".unit;
+  over9 = o: v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple" && v.__field1.__tag == "Tuple" && v.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple"
+          then 
+            let
+              o1 = o;
+              a = v.__field0;
+              b = v.__field1.__field0;
+              c = v.__field1.__field1.__field0;
+              d = v.__field1.__field1.__field1.__field0;
+              e = v.__field1.__field1.__field1.__field1.__field0;
+              f = v.__field1.__field1.__field1.__field1.__field1.__field0;
+              g = v.__field1.__field1.__field1.__field1.__field1.__field1.__field0;
+              h = v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field0;
+              i = v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field0;
+              z = v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field1;
+            in
+              module."LocalDependency.Data.Tuple".Tuple a (module."LocalDependency.Data.Tuple".Tuple b (module."LocalDependency.Data.Tuple".Tuple c (module."LocalDependency.Data.Tuple".Tuple d (module."LocalDependency.Data.Tuple".Tuple e (module."LocalDependency.Data.Tuple".Tuple f (module."LocalDependency.Data.Tuple".Tuple g (module."LocalDependency.Data.Tuple".Tuple h (module."LocalDependency.Data.Tuple".Tuple (o1 i) z))))))))
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple/Nested.purs at 209:1 - 209:102";
+    in
+      __pattern0 __patternFail;
+  over8 = o: v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple" && v.__field1.__tag == "Tuple" && v.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple"
+          then 
+            let
+              o1 = o;
+              a = v.__field0;
+              b = v.__field1.__field0;
+              c = v.__field1.__field1.__field0;
+              d = v.__field1.__field1.__field1.__field0;
+              e = v.__field1.__field1.__field1.__field1.__field0;
+              f = v.__field1.__field1.__field1.__field1.__field1.__field0;
+              g = v.__field1.__field1.__field1.__field1.__field1.__field1.__field0;
+              h = v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field0;
+              z = v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field1;
+            in
+              module."LocalDependency.Data.Tuple".Tuple a (module."LocalDependency.Data.Tuple".Tuple b (module."LocalDependency.Data.Tuple".Tuple c (module."LocalDependency.Data.Tuple".Tuple d (module."LocalDependency.Data.Tuple".Tuple e (module."LocalDependency.Data.Tuple".Tuple f (module."LocalDependency.Data.Tuple".Tuple g (module."LocalDependency.Data.Tuple".Tuple (o1 h) z)))))))
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple/Nested.purs at 205:1 - 205:94";
+    in
+      __pattern0 __patternFail;
+  over7 = o: v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple" && v.__field1.__tag == "Tuple" && v.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple"
+          then 
+            let
+              o1 = o;
+              a = v.__field0;
+              b = v.__field1.__field0;
+              c = v.__field1.__field1.__field0;
+              d = v.__field1.__field1.__field1.__field0;
+              e = v.__field1.__field1.__field1.__field1.__field0;
+              f = v.__field1.__field1.__field1.__field1.__field1.__field0;
+              g = v.__field1.__field1.__field1.__field1.__field1.__field1.__field0;
+              z = v.__field1.__field1.__field1.__field1.__field1.__field1.__field1;
+            in
+              module."LocalDependency.Data.Tuple".Tuple a (module."LocalDependency.Data.Tuple".Tuple b (module."LocalDependency.Data.Tuple".Tuple c (module."LocalDependency.Data.Tuple".Tuple d (module."LocalDependency.Data.Tuple".Tuple e (module."LocalDependency.Data.Tuple".Tuple f (module."LocalDependency.Data.Tuple".Tuple (o1 g) z))))))
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple/Nested.purs at 201:1 - 201:88";
+    in
+      __pattern0 __patternFail;
+  over6 = o: v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple" && v.__field1.__tag == "Tuple" && v.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple"
+          then 
+            let
+              o1 = o;
+              a = v.__field0;
+              b = v.__field1.__field0;
+              c = v.__field1.__field1.__field0;
+              d = v.__field1.__field1.__field1.__field0;
+              e = v.__field1.__field1.__field1.__field1.__field0;
+              f = v.__field1.__field1.__field1.__field1.__field1.__field0;
+              z = v.__field1.__field1.__field1.__field1.__field1.__field1;
+            in
+              module."LocalDependency.Data.Tuple".Tuple a (module."LocalDependency.Data.Tuple".Tuple b (module."LocalDependency.Data.Tuple".Tuple c (module."LocalDependency.Data.Tuple".Tuple d (module."LocalDependency.Data.Tuple".Tuple e (module."LocalDependency.Data.Tuple".Tuple (o1 f) z)))))
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple/Nested.purs at 197:1 - 197:82";
+    in
+      __pattern0 __patternFail;
+  over5 = o: v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple" && v.__field1.__tag == "Tuple" && v.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__tag == "Tuple"
+          then 
+            let
+              o1 = o;
+              a = v.__field0;
+              b = v.__field1.__field0;
+              c = v.__field1.__field1.__field0;
+              d = v.__field1.__field1.__field1.__field0;
+              e = v.__field1.__field1.__field1.__field1.__field0;
+              z = v.__field1.__field1.__field1.__field1.__field1;
+            in
+              module."LocalDependency.Data.Tuple".Tuple a (module."LocalDependency.Data.Tuple".Tuple b (module."LocalDependency.Data.Tuple".Tuple c (module."LocalDependency.Data.Tuple".Tuple d (module."LocalDependency.Data.Tuple".Tuple (o1 e) z))))
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple/Nested.purs at 193:1 - 193:76";
+    in
+      __pattern0 __patternFail;
+  over4 = o: v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple" && v.__field1.__tag == "Tuple" && v.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__tag == "Tuple"
+          then 
+            let
+              o1 = o;
+              a = v.__field0;
+              b = v.__field1.__field0;
+              c = v.__field1.__field1.__field0;
+              d = v.__field1.__field1.__field1.__field0;
+              z = v.__field1.__field1.__field1.__field1;
+            in
+              module."LocalDependency.Data.Tuple".Tuple a (module."LocalDependency.Data.Tuple".Tuple b (module."LocalDependency.Data.Tuple".Tuple c (module."LocalDependency.Data.Tuple".Tuple (o1 d) z)))
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple/Nested.purs at 189:1 - 189:70";
+    in
+      __pattern0 __patternFail;
+  over3 = o: v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple" && v.__field1.__tag == "Tuple" && v.__field1.__field1.__tag == "Tuple"
+          then 
+            let
+              o1 = o;
+              a = v.__field0;
+              b = v.__field1.__field0;
+              c = v.__field1.__field1.__field0;
+              z = v.__field1.__field1.__field1;
+            in
+              module."LocalDependency.Data.Tuple".Tuple a (module."LocalDependency.Data.Tuple".Tuple b (module."LocalDependency.Data.Tuple".Tuple (o1 c) z))
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple/Nested.purs at 185:1 - 185:64";
+    in
+      __pattern0 __patternFail;
+  over2 = o: v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple" && v.__field1.__tag == "Tuple"
+          then 
+            let
+              o1 = o;
+              a = v.__field0;
+              b = v.__field1.__field0;
+              z = v.__field1.__field1;
+            in
+              module."LocalDependency.Data.Tuple".Tuple a (module."LocalDependency.Data.Tuple".Tuple (o1 b) z)
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple/Nested.purs at 181:1 - 181:58";
+    in
+      __pattern0 __patternFail;
+  over10 = o: v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple" && v.__field1.__tag == "Tuple" && v.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple"
+          then 
+            let
+              o1 = o;
+              a = v.__field0;
+              b = v.__field1.__field0;
+              c = v.__field1.__field1.__field0;
+              d = v.__field1.__field1.__field1.__field0;
+              e = v.__field1.__field1.__field1.__field1.__field0;
+              f = v.__field1.__field1.__field1.__field1.__field1.__field0;
+              g = v.__field1.__field1.__field1.__field1.__field1.__field1.__field0;
+              h = v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field0;
+              i = v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field0;
+              j = v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field0;
+              z = v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field1;
+            in
+              module."LocalDependency.Data.Tuple".Tuple a (module."LocalDependency.Data.Tuple".Tuple b (module."LocalDependency.Data.Tuple".Tuple c (module."LocalDependency.Data.Tuple".Tuple d (module."LocalDependency.Data.Tuple".Tuple e (module."LocalDependency.Data.Tuple".Tuple f (module."LocalDependency.Data.Tuple".Tuple g (module."LocalDependency.Data.Tuple".Tuple h (module."LocalDependency.Data.Tuple".Tuple i (module."LocalDependency.Data.Tuple".Tuple (o1 j) z)))))))))
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple/Nested.purs at 213:1 - 213:109";
+    in
+      __pattern0 __patternFail;
+  over1 = o: v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple"
+          then 
+            let
+              o1 = o;
+              a = v.__field0;
+              z = v.__field1;
+            in
+              module."LocalDependency.Data.Tuple".Tuple (o1 a) z
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple/Nested.purs at 177:1 - 177:52";
+    in
+      __pattern0 __patternFail;
+  get9 = v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple" && v.__field1.__tag == "Tuple" && v.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple"
+          then 
+            let
+              i = v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field0;
+            in
+              i
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple/Nested.purs at 169:1 - 169:65";
+    in
+      __pattern0 __patternFail;
+  get8 = v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple" && v.__field1.__tag == "Tuple" && v.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple"
+          then 
+            let
+              h = v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field0;
+            in
+              h
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple/Nested.purs at 165:1 - 165:60";
+    in
+      __pattern0 __patternFail;
+  get7 = v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple" && v.__field1.__tag == "Tuple" && v.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple"
+          then 
+            let
+              g = v.__field1.__field1.__field1.__field1.__field1.__field1.__field0;
+            in
+              g
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple/Nested.purs at 161:1 - 161:56";
+    in
+      __pattern0 __patternFail;
+  get6 = v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple" && v.__field1.__tag == "Tuple" && v.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple"
+          then 
+            let
+              f = v.__field1.__field1.__field1.__field1.__field1.__field0;
+            in
+              f
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple/Nested.purs at 157:1 - 157:52";
+    in
+      __pattern0 __patternFail;
+  get5 = v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple" && v.__field1.__tag == "Tuple" && v.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__tag == "Tuple"
+          then 
+            let
+              e = v.__field1.__field1.__field1.__field1.__field0;
+            in
+              e
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple/Nested.purs at 153:1 - 153:48";
+    in
+      __pattern0 __patternFail;
+  get4 = v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple" && v.__field1.__tag == "Tuple" && v.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__tag == "Tuple"
+          then 
+            let
+              d = v.__field1.__field1.__field1.__field0;
+            in
+              d
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple/Nested.purs at 149:1 - 149:44";
+    in
+      __pattern0 __patternFail;
+  get3 = v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple" && v.__field1.__tag == "Tuple" && v.__field1.__field1.__tag == "Tuple"
+          then 
+            let
+              c = v.__field1.__field1.__field0;
+            in
+              c
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple/Nested.purs at 145:1 - 145:40";
+    in
+      __pattern0 __patternFail;
+  get2 = v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple" && v.__field1.__tag == "Tuple"
+          then 
+            let
+              b = v.__field1.__field0;
+            in
+              b
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple/Nested.purs at 141:1 - 141:36";
+    in
+      __pattern0 __patternFail;
+  get10 = v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple" && v.__field1.__tag == "Tuple" && v.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple" && v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__tag == "Tuple"
+          then 
+            let
+              j = v.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field1.__field0;
+            in
+              j
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple/Nested.purs at 173:1 - 173:70";
+    in
+      __pattern0 __patternFail;
+  get1 = v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple"
+          then 
+            let
+              a = v.__field0;
+            in
+              a
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple/Nested.purs at 137:1 - 137:32";
+    in
+      __pattern0 __patternFail;
+  curry9 = z: f': a: b: c: d: e: f: g: h: i: f' (module."LocalDependency.Data.Tuple".Tuple a (module."LocalDependency.Data.Tuple".Tuple b (module."LocalDependency.Data.Tuple".Tuple c (module."LocalDependency.Data.Tuple".Tuple d (module."LocalDependency.Data.Tuple".Tuple e (module."LocalDependency.Data.Tuple".Tuple f (module."LocalDependency.Data.Tuple".Tuple g (module."LocalDependency.Data.Tuple".Tuple h (module."LocalDependency.Data.Tuple".Tuple i z)))))))));
+  curry8 = z: f': a: b: c: d: e: f: g: h: f' (module."LocalDependency.Data.Tuple".Tuple a (module."LocalDependency.Data.Tuple".Tuple b (module."LocalDependency.Data.Tuple".Tuple c (module."LocalDependency.Data.Tuple".Tuple d (module."LocalDependency.Data.Tuple".Tuple e (module."LocalDependency.Data.Tuple".Tuple f (module."LocalDependency.Data.Tuple".Tuple g (module."LocalDependency.Data.Tuple".Tuple h z))))))));
+  curry7 = z: f': a: b: c: d: e: f: g: f' (module."LocalDependency.Data.Tuple".Tuple a (module."LocalDependency.Data.Tuple".Tuple b (module."LocalDependency.Data.Tuple".Tuple c (module."LocalDependency.Data.Tuple".Tuple d (module."LocalDependency.Data.Tuple".Tuple e (module."LocalDependency.Data.Tuple".Tuple f (module."LocalDependency.Data.Tuple".Tuple g z)))))));
+  curry6 = z: f': a: b: c: d: e: f: f' (module."LocalDependency.Data.Tuple".Tuple a (module."LocalDependency.Data.Tuple".Tuple b (module."LocalDependency.Data.Tuple".Tuple c (module."LocalDependency.Data.Tuple".Tuple d (module."LocalDependency.Data.Tuple".Tuple e (module."LocalDependency.Data.Tuple".Tuple f z))))));
+  curry5 = z: f: a: b: c: d: e: f (module."LocalDependency.Data.Tuple".Tuple a (module."LocalDependency.Data.Tuple".Tuple b (module."LocalDependency.Data.Tuple".Tuple c (module."LocalDependency.Data.Tuple".Tuple d (module."LocalDependency.Data.Tuple".Tuple e z)))));
+  curry4 = z: f: a: b: c: d: f (module."LocalDependency.Data.Tuple".Tuple a (module."LocalDependency.Data.Tuple".Tuple b (module."LocalDependency.Data.Tuple".Tuple c (module."LocalDependency.Data.Tuple".Tuple d z))));
+  curry3 = z: f: a: b: c: f (module."LocalDependency.Data.Tuple".Tuple a (module."LocalDependency.Data.Tuple".Tuple b (module."LocalDependency.Data.Tuple".Tuple c z)));
+  curry2 = z: f: a: b: f (module."LocalDependency.Data.Tuple".Tuple a (module."LocalDependency.Data.Tuple".Tuple b z));
+  curry10 = z: f': a: b: c: d: e: f: g: h: i: j: f' (module."LocalDependency.Data.Tuple".Tuple a (module."LocalDependency.Data.Tuple".Tuple b (module."LocalDependency.Data.Tuple".Tuple c (module."LocalDependency.Data.Tuple".Tuple d (module."LocalDependency.Data.Tuple".Tuple e (module."LocalDependency.Data.Tuple".Tuple f (module."LocalDependency.Data.Tuple".Tuple g (module."LocalDependency.Data.Tuple".Tuple h (module."LocalDependency.Data.Tuple".Tuple i (module."LocalDependency.Data.Tuple".Tuple j z))))))))));
+  curry1 = z: f: a: f (module."LocalDependency.Data.Tuple".Tuple a z);
+in
+  {inherit tuple1 tuple2 tuple3 tuple4 tuple5 tuple6 tuple7 tuple8 tuple9 tuple10 get1 get2 get3 get4 get5 get6 get7 get8 get9 get10 over1 over2 over3 over4 over5 over6 over7 over8 over9 over10 uncurry1 uncurry2 uncurry3 uncurry4 uncurry5 uncurry6 uncurry7 uncurry8 uncurry9 uncurry10 curry1 curry2 curry3 curry4 curry5 curry6 curry7 curry8 curry9 curry10;}
+;
+
+LocalDependency-Data-Tuple_default-nix = 
+let
+  module = 
+    { "Control.Applicative" = Control-Applicative_default-nix;
+      "Control.Apply" = Control-Apply_default-nix;
+      "Control.Bind" = Control-Bind_default-nix;
+      "Control.Monad" = Control-Monad_default-nix;
+      "Control.Semigroupoid" = Control-Semigroupoid_default-nix;
+      "Data.BooleanAlgebra" = Data-BooleanAlgebra_default-nix;
+      "Data.Bounded" = Data-Bounded_default-nix;
+      "Data.CommutativeRing" = Data-CommutativeRing_default-nix;
+      "Data.Eq" = Data-Eq_default-nix;
+      "Data.Function" = Data-Function_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.Generic.Rep" = Data-Generic-Rep_default-nix;
+      "Data.HeytingAlgebra" = Data-HeytingAlgebra_default-nix;
+      "Data.Monoid" = Data-Monoid_default-nix;
+      "Data.Ord" = Data-Ord_default-nix;
+      "Data.Ordering" = Data-Ordering_default-nix;
+      "Data.Ring" = Data-Ring_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+      "Data.Semiring" = Data-Semiring_default-nix;
+      "Data.Show" = Data-Show_default-nix;
+      "Data.Unit" = Data-Unit_default-nix;
+      "LocalDependency.Control.Comonad" = LocalDependency-Control-Comonad_default-nix;
+      "LocalDependency.Control.Extend" = LocalDependency-Control-Extend_default-nix;
+      "LocalDependency.Control.Lazy" = LocalDependency-Control-Lazy_default-nix;
+      "LocalDependency.Data.Functor.Invariant" = LocalDependency-Data-Functor-Invariant_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  Tuple = value0: value1: 
+    { __tag = "Tuple";
+      __field0 = value0;
+      __field1 = value1;
+    };
+  uncurry = f: v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple"
+          then 
+            let
+              f1 = f;
+              a = v.__field0;
+              b = v.__field1;
+            in
+              f1 a b
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple.purs at 130:1 - 130:57";
+    in
+      __pattern0 __patternFail;
+  swap = v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple"
+          then 
+            let
+              a = v.__field0;
+              b = v.__field1;
+            in
+              Tuple b a
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple.purs at 134:1 - 134:43";
+    in
+      __pattern0 __patternFail;
+  snd = v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple"
+          then 
+            let
+              b = v.__field1;
+            in
+              b
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple.purs at 122:1 - 122:34";
+    in
+      __pattern0 __patternFail;
+  showTuple = dictShow: dictShow1: 
+    { show = v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple"
+              then 
+                let
+                  a = v.__field0;
+                  b = v.__field1;
+                in
+                  module."Data.Semigroup".append module."Data.Semigroup".semigroupString "(Tuple " (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Show".show dictShow a) (module."Data.Semigroup".append module."Data.Semigroup".semigroupString " " (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Show".show dictShow1 b) ")")))
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple.purs at 20:1 - 21:65";
+        in
+          __pattern0 __patternFail;
+    };
+  semiringTuple = dictSemiring: dictSemiring1: 
+    { add = v: v1: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple" && v1.__tag == "Tuple"
+              then 
+                let
+                  x1 = v.__field0;
+                  y1 = v.__field1;
+                  x2 = v1.__field0;
+                  y2 = v1.__field1;
+                in
+                  Tuple (module."Data.Semiring".add dictSemiring x1 x2) (module."Data.Semiring".add dictSemiring1 y1 y2)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple.purs at 56:1 - 60:25";
+        in
+          __pattern0 __patternFail;
+      one = Tuple (module."Data.Semiring".one dictSemiring) (module."Data.Semiring".one dictSemiring1);
+      mul = v: v1: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple" && v1.__tag == "Tuple"
+              then 
+                let
+                  x1 = v.__field0;
+                  y1 = v.__field1;
+                  x2 = v1.__field0;
+                  y2 = v1.__field1;
+                in
+                  Tuple (module."Data.Semiring".mul dictSemiring x1 x2) (module."Data.Semiring".mul dictSemiring1 y1 y2)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple.purs at 56:1 - 60:25";
+        in
+          __pattern0 __patternFail;
+      zero = Tuple (module."Data.Semiring".zero dictSemiring) (module."Data.Semiring".zero dictSemiring1);
+    };
+  semigroupoidTuple = 
+    { compose = v: v1: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple" && v1.__tag == "Tuple"
+              then 
+                let
+                  c = v.__field1;
+                  a = v1.__field0;
+                in
+                  Tuple a c
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple.purs at 41:1 - 42:46";
+        in
+          __pattern0 __patternFail;
+    };
+  semigroupTuple = dictSemigroup: dictSemigroup1: 
+    { append = v: v1: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple" && v1.__tag == "Tuple"
+              then 
+                let
+                  a1 = v.__field0;
+                  b1 = v.__field1;
+                  a2 = v1.__field0;
+                  b2 = v1.__field1;
+                in
+                  Tuple (module."Data.Semigroup".append dictSemigroup a1 a2) (module."Data.Semigroup".append dictSemigroup1 b1 b2)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple.purs at 50:1 - 51:67";
+        in
+          __pattern0 __patternFail;
+    };
+  ringTuple = dictRing: dictRing1: 
+    { sub = v: v1: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple" && v1.__tag == "Tuple"
+              then 
+                let
+                  x1 = v.__field0;
+                  y1 = v.__field1;
+                  x2 = v1.__field0;
+                  y2 = v1.__field1;
+                in
+                  Tuple (module."Data.Ring".sub dictRing x1 x2) (module."Data.Ring".sub dictRing1 y1 y2)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple.purs at 62:1 - 63:66";
+        in
+          __pattern0 __patternFail;
+      "Semiring0" = __unused: semiringTuple (dictRing."Semiring0" module."Prim".undefined) (dictRing1."Semiring0" module."Prim".undefined);
+    };
+  monoidTuple = dictMonoid: dictMonoid1: 
+    { mempty = Tuple (module."Data.Monoid".mempty dictMonoid) (module."Data.Monoid".mempty dictMonoid1);
+      "Semigroup0" = __unused: semigroupTuple (dictMonoid."Semigroup0" module."Prim".undefined) (dictMonoid1."Semigroup0" module."Prim".undefined);
+    };
+  heytingAlgebraTuple = dictHeytingAlgebra: dictHeytingAlgebra1: 
+    { tt = Tuple (module."Data.HeytingAlgebra".tt dictHeytingAlgebra) (module."Data.HeytingAlgebra".tt dictHeytingAlgebra1);
+      ff = Tuple (module."Data.HeytingAlgebra".ff dictHeytingAlgebra) (module."Data.HeytingAlgebra".ff dictHeytingAlgebra1);
+      implies = v: v1: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple" && v1.__tag == "Tuple"
+              then 
+                let
+                  x1 = v.__field0;
+                  y1 = v.__field1;
+                  x2 = v1.__field0;
+                  y2 = v1.__field1;
+                in
+                  Tuple (module."Data.HeytingAlgebra".implies dictHeytingAlgebra x1 x2) (module."Data.HeytingAlgebra".implies dictHeytingAlgebra1 y1 y2)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple.purs at 67:1 - 73:42";
+        in
+          __pattern0 __patternFail;
+      conj = v: v1: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple" && v1.__tag == "Tuple"
+              then 
+                let
+                  x1 = v.__field0;
+                  y1 = v.__field1;
+                  x2 = v1.__field0;
+                  y2 = v1.__field1;
+                in
+                  Tuple (module."Data.HeytingAlgebra".conj dictHeytingAlgebra x1 x2) (module."Data.HeytingAlgebra".conj dictHeytingAlgebra1 y1 y2)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple.purs at 67:1 - 73:42";
+        in
+          __pattern0 __patternFail;
+      disj = v: v1: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple" && v1.__tag == "Tuple"
+              then 
+                let
+                  x1 = v.__field0;
+                  y1 = v.__field1;
+                  x2 = v1.__field0;
+                  y2 = v1.__field1;
+                in
+                  Tuple (module."Data.HeytingAlgebra".disj dictHeytingAlgebra x1 x2) (module."Data.HeytingAlgebra".disj dictHeytingAlgebra1 y1 y2)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple.purs at 67:1 - 73:42";
+        in
+          __pattern0 __patternFail;
+      not = v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple"
+              then 
+                let
+                  x = v.__field0;
+                  y = v.__field1;
+                in
+                  Tuple (module."Data.HeytingAlgebra".not dictHeytingAlgebra x) (module."Data.HeytingAlgebra".not dictHeytingAlgebra1 y)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple.purs at 67:1 - 73:42";
+        in
+          __pattern0 __patternFail;
+    };
+  genericTuple = 
+    { to = x: 
+        let
+          __pattern0 = __fail: 
+            if x.__tag == "Product"
+              then 
+                let
+                  arg = x.__field0;
+                  arg1 = x.__field1;
+                in
+                  Tuple arg arg1
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple.purs at 85:1 - 85:54";
+        in
+          __pattern0 __patternFail;
+      from = x: 
+        let
+          __pattern0 = __fail: 
+            if x.__tag == "Tuple"
+              then 
+                let
+                  arg = x.__field0;
+                  arg1 = x.__field1;
+                in
+                  module."Data.Generic.Rep".Product arg arg1
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple.purs at 85:1 - 85:54";
+        in
+          __pattern0 __patternFail;
+    };
+  functorTuple = 
+    { map = f: m: 
+        let
+          __pattern0 = __fail: 
+            if m.__tag == "Tuple"
+              then 
+                let
+                  v = m.__field0;
+                  v1 = m.__field1;
+                in
+                  Tuple v (f v1)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple.purs at 83:1 - 83:50";
+        in
+          __pattern0 __patternFail;
+    };
+  invariantTuple = {imap = module."LocalDependency.Data.Functor.Invariant".imapF functorTuple;};
+  fst = v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "Tuple"
+          then 
+            let
+              a = v.__field0;
+            in
+              a
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple.purs at 118:1 - 118:34";
+    in
+      __pattern0 __patternFail;
+  lazyTuple = dictLazy: dictLazy1: {defer = f: Tuple (module."Data.Function".apply (module."LocalDependency.Control.Lazy".defer dictLazy) (v: fst (f module."Data.Unit".unit))) (module."Data.Function".apply (module."LocalDependency.Control.Lazy".defer dictLazy1) (v: snd (f module."Data.Unit".unit)));};
+  extendTuple = 
+    { extend = f: v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple"
+              then 
+                let
+                  f1 = f;
+                  t = v;
+                  a = v.__field0;
+                in
+                  Tuple a (f1 t)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple.purs at 108:1 - 109:41";
+        in
+          __pattern0 __patternFail;
+      "Functor0" = __unused: functorTuple;
+    };
+  eqTuple = dictEq: dictEq1: 
+    { eq = x: y: 
+        let
+          __pattern0 = __fail: 
+            if x.__tag == "Tuple" && y.__tag == "Tuple"
+              then 
+                let
+                  l = x.__field0;
+                  l1 = x.__field1;
+                  r = y.__field0;
+                  r1 = y.__field1;
+                in
+                  module."Data.HeytingAlgebra".conj module."Data.HeytingAlgebra".heytingAlgebraBoolean (module."Data.Eq".eq dictEq l r) (module."Data.Eq".eq dictEq1 l1 r1)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple.purs at 25:1 - 25:58";
+        in
+          __pattern0 __patternFail;
+    };
+  ordTuple = dictOrd: dictOrd1: 
+    { compare = x: y: 
+        let
+          __pattern0 = __fail: 
+            if x.__tag == "Tuple" && y.__tag == "Tuple"
+              then 
+                let
+                  l = x.__field0;
+                  l1 = x.__field1;
+                  r = y.__field0;
+                  r1 = y.__field1;
+                in
+                  
+                  let
+                    v = module."Data.Ord".compare dictOrd l r;
+                  in
+                    
+                    let
+                      __pattern0 = __fail: if v.__tag == "LT" then module."Data.Ordering".LT else __fail;
+                      __pattern1 = __fail: if v.__tag == "GT" then module."Data.Ordering".GT else __fail;
+                      __pattern2 = __fail: module."Data.Ord".compare dictOrd1 l1 r1;
+                      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple.purs at 33:1 - 33:62";
+                    in
+                      __pattern0 (__pattern1 (__pattern2 __patternFail))
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple.purs at 33:1 - 33:62";
+        in
+          __pattern0 __patternFail;
+      "Eq0" = __unused: eqTuple (dictOrd."Eq0" module."Prim".undefined) (dictOrd1."Eq0" module."Prim".undefined);
+    };
+  eq1Tuple = dictEq: {eq1 = dictEq1: module."Data.Eq".eq (eqTuple dictEq dictEq1);};
+  ord1Tuple = dictOrd: 
+    { compare1 = dictOrd1: module."Data.Ord".compare (ordTuple dictOrd dictOrd1);
+      "Eq10" = __unused: eq1Tuple (dictOrd."Eq0" module."Prim".undefined);
+    };
+  curry = f: a: b: f (Tuple a b);
+  comonadTuple = 
+    { extract = snd;
+      "Extend0" = __unused: extendTuple;
+    };
+  commutativeRingTuple = dictCommutativeRing: dictCommutativeRing1: {"Ring0" = __unused: ringTuple (dictCommutativeRing."Ring0" module."Prim".undefined) (dictCommutativeRing1."Ring0" module."Prim".undefined);};
+  boundedTuple = dictBounded: dictBounded1: 
+    { top = Tuple (module."Data.Bounded".top dictBounded) (module."Data.Bounded".top dictBounded1);
+      bottom = Tuple (module."Data.Bounded".bottom dictBounded) (module."Data.Bounded".bottom dictBounded1);
+      "Ord0" = __unused: ordTuple (dictBounded."Ord0" module."Prim".undefined) (dictBounded1."Ord0" module."Prim".undefined);
+    };
+  booleanAlgebraTuple = dictBooleanAlgebra: dictBooleanAlgebra1: {"HeytingAlgebra0" = __unused: heytingAlgebraTuple (dictBooleanAlgebra."HeytingAlgebra0" module."Prim".undefined) (dictBooleanAlgebra1."HeytingAlgebra0" module."Prim".undefined);};
+  applyTuple = dictSemigroup: 
+    { apply = v: v1: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple" && v1.__tag == "Tuple"
+              then 
+                let
+                  a1 = v.__field0;
+                  f = v.__field1;
+                  a2 = v1.__field0;
+                  x = v1.__field1;
+                in
+                  Tuple (module."Data.Semigroup".append dictSemigroup a1 a2) (f x)
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple.purs at 96:1 - 97:59";
+        in
+          __pattern0 __patternFail;
+      "Functor0" = __unused: functorTuple;
+    };
+  bindTuple = dictSemigroup: 
+    { bind = v: f: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Tuple"
+              then 
+                let
+                  a1 = v.__field0;
+                  b = v.__field1;
+                  f1 = f;
+                in
+                  
+                  let
+                    v1 = f1 b;
+                  in
+                    
+                    let
+                      __pattern0 = __fail: 
+                        if v1.__tag == "Tuple"
+                          then 
+                            let
+                              a2 = v1.__field0;
+                              c = v1.__field1;
+                            in
+                              Tuple (module."Data.Semigroup".append dictSemigroup a1 a2) c
+                          else __fail;
+                      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple.purs at 103:25 - 104:37";
+                    in
+                      __pattern0 __patternFail
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/tuples/Data/Tuple.purs at 102:1 - 104:37";
+        in
+          __pattern0 __patternFail;
+      "Apply0" = __unused: applyTuple dictSemigroup;
+    };
+  applicativeTuple = dictMonoid: 
+    { pure = Tuple (module."Data.Monoid".mempty dictMonoid);
+      "Apply0" = __unused: applyTuple (dictMonoid."Semigroup0" module."Prim".undefined);
+    };
+  monadTuple = dictMonoid: 
+    { "Applicative0" = __unused: applicativeTuple dictMonoid;
+      "Bind1" = __unused: bindTuple (dictMonoid."Semigroup0" module."Prim".undefined);
+    };
+in
+  {inherit Tuple fst snd curry uncurry swap showTuple eqTuple eq1Tuple ordTuple ord1Tuple boundedTuple semigroupoidTuple semigroupTuple monoidTuple semiringTuple ringTuple commutativeRingTuple heytingAlgebraTuple booleanAlgebraTuple functorTuple genericTuple invariantTuple applyTuple applicativeTuple bindTuple monadTuple extendTuple comonadTuple lazyTuple;}
+;
+
+LocalDependency-Effect_default-nix = 
+let
+  module = 
+    { "Control.Applicative" = Control-Applicative_default-nix;
+      "Control.Apply" = Control-Apply_default-nix;
+      "Control.Bind" = Control-Bind_default-nix;
+      "Control.Monad" = Control-Monad_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.Monoid" = Data-Monoid_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  foreign = LocalDependency-Effect_foreign-nix;
+  pureE = foreign.pureE;
+  bindE = foreign.bindE;
+  monadEffect = 
+    { "Applicative0" = __unused: applicativeEffect;
+      "Bind1" = __unused: bindEffect;
+    };
+  bindEffect = 
+    { bind = bindE;
+      "Apply0" = __unused: applyEffect;
+    };
+  applyEffect = 
+    { apply = module."Control.Monad".ap monadEffect;
+      "Functor0" = __unused: functorEffect;
+    };
+  applicativeEffect = 
+    { pure = pureE;
+      "Apply0" = __unused: applyEffect;
+    };
+  functorEffect = {map = module."Control.Applicative".liftA1 applicativeEffect;};
+  semigroupEffect = dictSemigroup: {append = module."Control.Apply".lift2 applyEffect (module."Data.Semigroup".append dictSemigroup);};
+  monoidEffect = dictMonoid: 
+    { mempty = pureE (module."Data.Monoid".mempty dictMonoid);
+      "Semigroup0" = __unused: semigroupEffect (dictMonoid."Semigroup0" module."Prim".undefined);
+    };
+in
+  {inherit functorEffect applyEffect applicativeEffect bindEffect monadEffect semigroupEffect monoidEffect;}
+;
+
+LocalDependency-Effect_foreign-nix = {
+  pureE = a: _: a;
+
+  bindE = x: f: _:
+    let
+      r = x null;
+    in
+    builtins.seq r (f r null);
+}
+
+;
+
+LocalDependency-Safe-Coerce_default-nix = 
+let
+  module = 
+    { "LocalDependency.Unsafe.Coerce" = LocalDependency-Unsafe-Coerce_default-nix;
+      "Prim.Coerce" = import ../Prim.Coerce;
+    };
+  coerce = dictCoercible: module."LocalDependency.Unsafe.Coerce".unsafeCoerce;
+in
+  
+  { inherit coerce;
+    inherit (module."Prim.Coerce");
+  }
+;
+
+LocalDependency-Type-Equality_default-nix = 
+let
+  module = {"Prim.Coerce" = import ../Prim.Coerce;};
+  TypeEquals-Dict = x: x;
+  To = x: x;
+  From = x: x;
+  refl = 
+    { proof = a: a;
+      "Coercible0" = __unused: module."Prim".undefined;
+    };
+  proof = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.proof;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/type-equality/Type/Equality.purs at 22:3 - 22:32";
+    in
+      __pattern0 __patternFail;
+  to = dictTypeEquals: 
+    let
+      v = proof dictTypeEquals (a: a);
+    in
+      
+      let
+        __pattern0 = __fail: 
+          let
+            f = v;
+          in
+            f;
+        __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/type-equality/Type/Equality.purs at 30:6 - 30:44";
+      in
+        __pattern0 __patternFail;
+  from = dictTypeEquals: 
+    let
+      v = proof dictTypeEquals (a: a);
+    in
+      
+      let
+        __pattern0 = __fail: 
+          let
+            f = v;
+          in
+            f;
+        __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/deps/type-equality/Type/Equality.purs at 35:8 - 35:50";
+      in
+        __pattern0 __patternFail;
+in
+  {inherit proof to from refl;}
+;
+
+LocalDependency-Unsafe-Coerce_default-nix = 
+let
+  module = { };
+  foreign = LocalDependency-Unsafe-Coerce_foreign-nix;
+  unsafeCoerce = foreign.unsafeCoerce;
+in
+  {inherit unsafeCoerce;}
+;
+
+LocalDependency-Unsafe-Coerce_foreign-nix = 
+{ unsafeCoerce = x: x; }
+
+;
+
 Partial-Unsafe_default-nix = 
 let
   module = {"Partial" = Partial_default-nix;};
@@ -16691,6 +31648,22 @@ in
   }
 ;
 
+Test-Main_default-nix = 
+let
+  module = 
+    { "Data.Array" = Data-Array_default-nix;
+      "Prelude" = Prelude_default-nix;
+      "Test.MiraculixLite" = Test-MiraculixLite_default-nix;
+      "Test.MiraculixLite.FFI" = Test-MiraculixLite-FFI_default-nix;
+      "Test.MiraculixLite.TestTree" = Test-MiraculixLite-TestTree_default-nix;
+      "Tests.Test.Miraculix.Nix" = Tests-Test-Miraculix-Nix_default-nix;
+    };
+  tests = module."Test.MiraculixLite.TestTree".testGroup "miraculix" [module."Tests.Test.Miraculix.Nix".tests];
+  main = module."Test.MiraculixLite".runTests tests;
+in
+  {inherit main tests;}
+;
+
 Test-Miraculix-Assertion_default-nix = 
 let
   module = 
@@ -16699,10 +31672,12 @@ let
       "Data.Ord" = Data-Ord_default-nix;
       "Data.Semigroup" = Data-Semigroup_default-nix;
       "Data.Show" = Data-Show_default-nix;
+      "DoctorNix" = DoctorNix_default-nix;
       "Prelude" = Prelude_default-nix;
       "Test.Miraculix.Typo" = Test-Miraculix-Typo_default-nix;
     };
   Assertion = x: x;
+  toNixType = {toNixType = v: module."DoctorNix".Opaque "Assertion" [];};
   message = v: 
     let
       __pattern0 = __fail: 
@@ -16710,7 +31685,7 @@ let
           message' = v.message;
         in
           message';
-      __patternFail = builtins.throw "Pattern match failure in src/Test/Miraculix/Assertion.purs at 59:1 - 59:37";
+      __patternFail = builtins.throw "Pattern match failure in src/Test/Miraculix/Assertion.purs at 63:1 - 63:37";
     in
       __pattern0 __patternFail;
   isSuccess = v: 
@@ -16720,7 +31695,7 @@ let
           result = v.result;
         in
           result;
-      __patternFail = builtins.throw "Pattern match failure in src/Test/Miraculix/Assertion.purs at 56:1 - 56:34";
+      __patternFail = builtins.throw "Pattern match failure in src/Test/Miraculix/Assertion.purs at 60:1 - 60:34";
     in
       __pattern0 __patternFail;
   assert- = result: message': 
@@ -16734,7 +31709,7 @@ let
   assertGt = dictShow: dictOrd: l: r: assert- (module."Data.Ord".greaterThan dictOrd l r) [(module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Show".show dictShow l) (module."Data.Semigroup".append module."Data.Semigroup".semigroupString " is not greater than " (module."Data.Show".show dictShow r)))];
   assertLt = dictShow: dictOrd: l: r: assert- (module."Data.Ord".lessThan dictOrd l r) [(module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Show".show dictShow l) (module."Data.Semigroup".append module."Data.Semigroup".semigroupString " is not lower than " (module."Data.Show".show dictShow r)))];
 in
-  {inherit assertEq assertLt assertGt assert- isSuccess message;}
+  {inherit assertEq assertLt assertGt assert- isSuccess message toNixType;}
 ;
 
 Test-Miraculix-FFI_default-nix = 
@@ -16778,6 +31753,49 @@ in
   bullet = "•";
 }
 
+;
+
+Test-Miraculix-Nix-Docs_default-nix = 
+let
+  module = 
+    { "DoctorNix" = DoctorNix_default-nix;
+      "Test.Miraculix.Assertion" = Test-Miraculix-Assertion_default-nix;
+      "Test.Miraculix.Nix" = Test-Miraculix-Nix_default-nix;
+      "Test.Miraculix.Nix.Internal" = Test-Miraculix-Nix-Internal_default-nix;
+      "Test.Miraculix.TestTree" = Test-Miraculix-TestTree_default-nix;
+      "Type.Proxy" = Type-Proxy_default-nix;
+    };
+  Bar = value0: 
+    { __tag = "Bar";
+      __field0 = value0;
+    };
+  Baz = {__tag = "Baz";};
+  sample = v: true;
+  docs = 
+    { title = "miraculix";
+      types = 
+        [ 
+          { name = "Assertion";
+            descr = "...";
+            type_ = module."DoctorNix".toNixType' module."Test.Miraculix.Assertion".toNixType module."Type.Proxy".Proxy;
+          }
+        ];
+      defs = 
+        [ 
+          { name = "assertEq";
+            descr = "...";
+            type_ = module."DoctorNix".toNixType (module."DoctorNix".function module."DoctorNix".foreign' (module."DoctorNix".function module."DoctorNix".foreign' module."Test.Miraculix.Assertion".toNixType)) module."Test.Miraculix.Nix.Internal".assertEq;
+          }
+          
+          { name = "testCase";
+            descr = "...";
+            type_ = module."DoctorNix".toNixType (module."DoctorNix".function module."DoctorNix".string (module."DoctorNix".function module."Test.Miraculix.Assertion".toNixType module."Test.Miraculix.TestTree".toNixType)) module."Test.Miraculix.TestTree".testCase;
+          }
+        ];
+    };
+  markdown = module."DoctorNix".render docs;
+in
+  {inherit Bar Baz sample docs markdown;}
 ;
 
 Test-Miraculix-Nix-Internal_default-nix = 
@@ -16867,11 +31885,13 @@ Test-Miraculix-Nix_default-nix =
 let
   module = 
     { "Test.Miraculix" = Test-Miraculix_default-nix;
+      "Test.Miraculix.Assertion" = Test-Miraculix-Assertion_default-nix;
       "Test.Miraculix.Nix.Internal" = Test-Miraculix-Nix-Internal_default-nix;
     };
 in
   
   { inherit (module."Test.Miraculix") runTests testCase testGroup;
+    inherit (module."Test.Miraculix.Assertion");
     inherit (module."Test.Miraculix.Nix.Internal") assertEq;
   }
 ;
@@ -16926,6 +31946,7 @@ let
       "Data.Semiring" = Data-Semiring_default-nix;
       "Data.Symbol" = Data-Symbol_default-nix;
       "Data.Traversable" = Data-Traversable_default-nix;
+      "DoctorNix" = DoctorNix_default-nix;
       "Effect" = Effect_default-nix;
       "Prelude" = Prelude_default-nix;
       "Test.Miraculix.Assertion" = Test-Miraculix-Assertion_default-nix;
@@ -16941,6 +31962,7 @@ let
     { __tag = "TestGroup";
       __field0 = value0;
     };
+  toNixType = {toNixType = v: module."DoctorNix".Opaque "TestTree" [];};
   testGroup = name: tests: TestGroup 
     { name = name;
       tests = tests;
@@ -16956,7 +31978,7 @@ let
           name = v.name;
         in
           [(module."Test.Miraculix.Typo".withBullet name)];
-      __patternFail = builtins.throw "Pattern match failure in src/Test/Miraculix/TestTree.purs at 60:1 - 60:45";
+      __patternFail = builtins.throw "Pattern match failure in src/Test/Miraculix/TestTree.purs at 64:1 - 64:45";
     in
       __pattern0 __patternFail;
   mkTestCaseLog = v: 
@@ -16973,7 +31995,7 @@ let
           assertion = v.assertion;
         in
           if module."Data.Boolean".otherwise then module."Data.Semigroup".append module."Data.Semigroup".semigroupArray [(module."Test.Miraculix.Typo".withBullet (module."Data.Semigroup".append module."Data.Semigroup".semigroupString name (module."Data.Semigroup".append module."Data.Semigroup".semigroupString ": " (module."Test.Miraculix.Typo".fontColor module."Test.Miraculix.Typo".Red "failed"))))] (module."Data.Functor".map module."Data.Functor".functorArray (module."Test.Miraculix.Typo".indent 1) (module."Test.Miraculix.Assertion".message assertion)) else __fail;
-      __patternFail = builtins.throw "Pattern match failure in src/Test/Miraculix/TestTree.purs at 48:1 - 48:43";
+      __patternFail = builtins.throw "Pattern match failure in src/Test/Miraculix/TestTree.purs at 52:1 - 52:43";
     in
       __pattern0 (__pattern1 __patternFail);
   getSummary' = depth: v: 
@@ -17006,7 +32028,7 @@ let
                                 log = log;
                               }
                             else __fail;
-                    __patternFail = builtins.throw "Pattern match failure in src/Test/Miraculix/TestTree.purs at 72:3 - 74:59";
+                    __patternFail = builtins.throw "Pattern match failure in src/Test/Miraculix/TestTree.purs at 76:3 - 78:59";
                   in
                     __pattern0 __patternFail;
               in
@@ -17030,7 +32052,7 @@ let
               in
                 module."Control.Bind".discard module."Control.Bind".discardUnit module."Effect".bindEffect (module."Data.Foldable".traverse_ module."Effect".applicativeEffect module."Data.Foldable".foldableArray module."Test.Miraculix.FFI".trace log) (__unused: module."Control.Bind".bind module."Effect".bindEffect (module."Data.Functor".map module."Effect".functorEffect (module."Data.Foldable".fold module."Data.Foldable".foldableArray (module."Data.Monoid".monoidRecord module."Prim".undefined (module."Data.Monoid".monoidRecordCons {reflectSymbol = __unused: "count";} (module."Data.Monoid.Additive".monoidAdditive module."Data.Semiring".semiringInt) module."Prim".undefined (module."Data.Monoid".monoidRecordCons {reflectSymbol = __unused: "failures";} (module."Data.Monoid.Additive".monoidAdditive module."Data.Semiring".semiringInt) module."Prim".undefined (module."Data.Monoid".monoidRecordCons {reflectSymbol = __unused: "log";} module."Data.Monoid".monoidArray module."Prim".undefined module."Data.Monoid".monoidRecordNil))))) (module."Data.Traversable".traverse module."Data.Traversable".traversableArray module."Effect".applicativeEffect (getSummary' (module."Data.Semiring".add module."Data.Semiring".semiringInt depth1 1)) testGroup'.tests)) (children: module."Control.Applicative".pure module."Effect".applicativeEffect (module."Data.Semigroup".append (module."Data.Semigroup".semigroupRecord module."Prim".undefined (module."Data.Semigroup".semigroupRecordCons {reflectSymbol = __unused: "count";} module."Prim".undefined (module."Data.Semigroup".semigroupRecordCons {reflectSymbol = __unused: "failures";} module."Prim".undefined (module."Data.Semigroup".semigroupRecordCons {reflectSymbol = __unused: "log";} module."Prim".undefined module."Data.Semigroup".semigroupRecordNil module."Data.Semigroup".semigroupArray) (module."Data.Monoid.Additive".semigroupAdditive module."Data.Semiring".semiringInt)) (module."Data.Monoid.Additive".semigroupAdditive module."Data.Semiring".semiringInt))) here children)))
           else __fail;
-      __patternFail = builtins.throw "Pattern match failure in src/Test/Miraculix/TestTree.purs at 63:1 - 63:49";
+      __patternFail = builtins.throw "Pattern match failure in src/Test/Miraculix/TestTree.purs at 67:1 - 67:49";
     in
       __pattern0 (__pattern1 __patternFail);
   getSummary = tt: module."Control.Bind".bind module."Effect".bindEffect (getSummary' 0 tt) 
@@ -17055,7 +32077,7 @@ let
         )
     );
 in
-  {inherit testCase testGroup getSummary;}
+  {inherit testCase testGroup getSummary toNixType;}
 ;
 
 Test-Miraculix-Typo_default-nix = 
@@ -17111,6 +32133,380 @@ in
     inherit (module."Test.Miraculix.FFI");
     inherit (module."Test.Miraculix.TestTree") testCase testGroup;
   }
+;
+
+Test-MiraculixLite-Assertion_default-nix = 
+let
+  module = 
+    { "Data.Eq" = Data-Eq_default-nix;
+      "Data.Function" = Data-Function_default-nix;
+      "Data.Ord" = Data-Ord_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+      "Data.Show" = Data-Show_default-nix;
+      "Prelude" = Prelude_default-nix;
+      "Test.MiraculixLite.Typo" = Test-MiraculixLite-Typo_default-nix;
+    };
+  Assertion = x: x;
+  message = v: 
+    let
+      __pattern0 = __fail: 
+        let
+          message' = v.message;
+        in
+          message';
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/Test/Miraculix/Assertion.purs at 59:1 - 59:37";
+    in
+      __pattern0 __patternFail;
+  isSuccess = v: 
+    let
+      __pattern0 = __fail: 
+        let
+          result = v.result;
+        in
+          result;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/Test/Miraculix/Assertion.purs at 56:1 - 56:34";
+    in
+      __pattern0 __patternFail;
+  assert- = result: message': 
+    { result = result;
+      message = message';
+    };
+  assertEq = dictShow: dictEq: actual: expected: assert- (module."Data.Eq".eq dictEq actual expected) [(module."Data.Function".apply module."Test.MiraculixLite.Typo".withBullet (module."Test.MiraculixLite.Typo".fontColor module."Test.MiraculixLite.Typo".Yellow "actual:"))
+    (module."Data.Function".apply (module."Test.MiraculixLite.Typo".indent 1) (module."Data.Show".show dictShow actual))
+    (module."Data.Function".apply module."Test.MiraculixLite.Typo".withBullet (module."Test.MiraculixLite.Typo".fontColor module."Test.MiraculixLite.Typo".Yellow "expected:"))
+    (module."Data.Function".apply (module."Test.MiraculixLite.Typo".indent 1) (module."Data.Show".show dictShow expected))];
+  assertGt = dictShow: dictOrd: l: r: assert- (module."Data.Ord".greaterThan dictOrd l r) [(module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Show".show dictShow l) (module."Data.Semigroup".append module."Data.Semigroup".semigroupString " is not greater than " (module."Data.Show".show dictShow r)))];
+  assertLt = dictShow: dictOrd: l: r: assert- (module."Data.Ord".lessThan dictOrd l r) [(module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Show".show dictShow l) (module."Data.Semigroup".append module."Data.Semigroup".semigroupString " is not lower than " (module."Data.Show".show dictShow r)))];
+in
+  {inherit assertEq assertLt assertGt assert- isSuccess message;}
+;
+
+Test-MiraculixLite-FFI_default-nix = 
+let
+  module = 
+    { "LocalDependency.Effect" = LocalDependency-Effect_default-nix;
+      "Prelude" = Prelude_default-nix;
+    };
+  foreign = Test-MiraculixLite-FFI_foreign-nix;
+  abort = foreign.abort;
+  seq = foreign.seq;
+  deepSeq = foreign.deepSeq;
+  mkReport = foreign.mkReport;
+  trace = foreign.trace;
+  foldl' = foreign.foldl';
+  concatStringsSep = foreign.concatStringsSep;
+  substring = foreign.substring;
+  bullet = foreign.bullet;
+in
+  {inherit abort seq deepSeq mkReport trace foldl' concatStringsSep substring bullet;}
+;
+
+Test-MiraculixLite-FFI_foreign-nix = let
+  pkgs = import <nixpkgs> { };
+  mkReport = txt: pkgs.writeText "test-success" txt;
+in
+{
+  inherit (builtins)
+    seq
+    deepSeq
+    foldl'
+    concatStringsSep
+    substring
+    ;
+
+  trace = x: _: builtins.trace x null;
+  abort = x: _: builtins.abort x;
+
+  inherit mkReport;
+
+  bullet = "•";
+}
+
+;
+
+Test-MiraculixLite-Summary_default-nix = 
+let
+  module = 
+    { "Data.Eq" = Data-Eq_default-nix;
+      "Data.Function" = Data-Function_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.Monoid" = Data-Monoid_default-nix;
+      "Data.Monoid.Additive" = Data-Monoid-Additive_default-nix;
+      "Data.Newtype" = Data-Newtype_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+      "Data.Show" = Data-Show_default-nix;
+      "LocalDependency.Data.Foldable" = LocalDependency-Data-Foldable_default-nix;
+      "Prelude" = Prelude_default-nix;
+      "Test.MiraculixLite.Typo" = Test-MiraculixLite-Typo_default-nix;
+    };
+  printSummaryFooter = summary: 
+    let
+      failures = module."Data.Newtype".un module."Prim".undefined module."Data.Monoid.Additive".Additive summary.failures;
+      count = module."Data.Newtype".un module."Prim".undefined module."Data.Monoid.Additive".Additive summary.count;
+      color = 
+        let
+          __pattern0 = __fail: if module."Data.Eq".eq module."Data.Eq".eqInt failures 0 then module."Test.MiraculixLite.Typo".Green else __fail;
+          __pattern1 = __fail: module."Test.MiraculixLite.Typo".Red;
+          __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/Test/Miraculix/Summary.purs at 34:11 - 34:47";
+        in
+          __pattern0 (__pattern1 __patternFail);
+    in
+      [(module."Data.Function".apply (module."Test.MiraculixLite.Typo".fontColor color) (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Show".show module."Data.Show".showInt failures) (module."Data.Semigroup".append module."Data.Semigroup".semigroupString " out of " (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Show".show module."Data.Show".showInt count) " tests failed"))))];
+  printSummary = summary: module."Data.Function".apply (module."LocalDependency.Data.Foldable".fold module."LocalDependency.Data.Foldable".foldableArray module."Data.Monoid".monoidString) (module."Data.Functor".map module."Data.Functor".functorArray (v: module."Data.Semigroup".append module."Data.Semigroup".semigroupString v "
+") summary.log);
+in
+  {inherit printSummaryFooter printSummary;}
+;
+
+Test-MiraculixLite-TestTree_default-nix = 
+let
+  module = 
+    { "Control.Applicative" = Control-Applicative_default-nix;
+      "Control.Bind" = Control-Bind_default-nix;
+      "Data.Boolean" = Data-Boolean_default-nix;
+      "Data.Eq" = Data-Eq_default-nix;
+      "Data.Function" = Data-Function_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.Monoid" = Data-Monoid_default-nix;
+      "Data.Monoid.Additive" = Data-Monoid-Additive_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+      "Data.Semiring" = Data-Semiring_default-nix;
+      "Data.Symbol" = Data-Symbol_default-nix;
+      "LocalDependency.Data.Foldable" = LocalDependency-Data-Foldable_default-nix;
+      "LocalDependency.Data.Traversable" = LocalDependency-Data-Traversable_default-nix;
+      "LocalDependency.Effect" = LocalDependency-Effect_default-nix;
+      "Prelude" = Prelude_default-nix;
+      "Test.MiraculixLite.Assertion" = Test-MiraculixLite-Assertion_default-nix;
+      "Test.MiraculixLite.FFI" = Test-MiraculixLite-FFI_default-nix;
+      "Test.MiraculixLite.Summary" = Test-MiraculixLite-Summary_default-nix;
+      "Test.MiraculixLite.Typo" = Test-MiraculixLite-Typo_default-nix;
+    };
+  TestCase = value0: 
+    { __tag = "TestCase";
+      __field0 = value0;
+    };
+  TestGroup = value0: 
+    { __tag = "TestGroup";
+      __field0 = value0;
+    };
+  testGroup = name: tests: TestGroup 
+    { name = name;
+      tests = tests;
+    };
+  testCase = name: assertion: TestCase 
+    { name = name;
+      assertion = assertion;
+    };
+  mkTestGroupLog = v: 
+    let
+      __pattern0 = __fail: 
+        let
+          name = v.name;
+        in
+          [(module."Test.MiraculixLite.Typo".withBullet name)];
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/Test/Miraculix/TestTree.purs at 60:1 - 60:45";
+    in
+      __pattern0 __patternFail;
+  mkTestCaseLog = v: 
+    let
+      __pattern0 = __fail: 
+        let
+          name = v.name;
+          assertion = v.assertion;
+        in
+          if module."Test.MiraculixLite.Assertion".isSuccess assertion then [(module."Test.MiraculixLite.Typo".withBullet (module."Data.Semigroup".append module."Data.Semigroup".semigroupString name (module."Data.Semigroup".append module."Data.Semigroup".semigroupString ": " (module."Test.MiraculixLite.Typo".fontColor module."Test.MiraculixLite.Typo".Green "ok"))))] else __fail;
+      __pattern1 = __fail: 
+        let
+          name = v.name;
+          assertion = v.assertion;
+        in
+          if module."Data.Boolean".otherwise then module."Data.Semigroup".append module."Data.Semigroup".semigroupArray [(module."Test.MiraculixLite.Typo".withBullet (module."Data.Semigroup".append module."Data.Semigroup".semigroupString name (module."Data.Semigroup".append module."Data.Semigroup".semigroupString ": " (module."Test.MiraculixLite.Typo".fontColor module."Test.MiraculixLite.Typo".Red "failed"))))] (module."Data.Functor".map module."Data.Functor".functorArray (module."Test.MiraculixLite.Typo".indent 1) (module."Test.MiraculixLite.Assertion".message assertion)) else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/Test/Miraculix/TestTree.purs at 48:1 - 48:43";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  getSummary' = depth: v: 
+    let
+      __pattern0 = __fail: 
+        if v.__tag == "TestCase"
+          then 
+            let
+              depth1 = depth;
+              tc = v.__field0;
+            in
+              
+              let
+                log = module."Data.Functor".map module."Data.Functor".functorArray (module."Test.MiraculixLite.Typo".indent depth1) (mkTestCaseLog tc);
+                isSuccess = module."Test.MiraculixLite.Assertion".isSuccess tc.assertion;
+                report = 
+                  let
+                    __pattern0 = __fail: 
+                      if isSuccess
+                        then 
+                          { failures = module."Control.Applicative".pure module."Data.Monoid.Additive".applicativeAdditive 0;
+                            count = module."Control.Applicative".pure module."Data.Monoid.Additive".applicativeAdditive 1;
+                            log = log;
+                          }
+                        else 
+                          if module."Data.Boolean".otherwise
+                            then 
+                              { failures = module."Control.Applicative".pure module."Data.Monoid.Additive".applicativeAdditive 1;
+                                count = module."Control.Applicative".pure module."Data.Monoid.Additive".applicativeAdditive 1;
+                                log = log;
+                              }
+                            else __fail;
+                    __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/Test/Miraculix/TestTree.purs at 72:3 - 74:59";
+                  in
+                    __pattern0 __patternFail;
+              in
+                module."Control.Bind".discard module."Control.Bind".discardUnit module."LocalDependency.Effect".bindEffect (module."LocalDependency.Data.Foldable".traverse_ module."LocalDependency.Effect".applicativeEffect module."LocalDependency.Data.Foldable".foldableArray module."Test.MiraculixLite.FFI".trace log) (__unused: module."Data.Function".apply (module."Control.Applicative".pure module."LocalDependency.Effect".applicativeEffect) report)
+          else __fail;
+      __pattern1 = __fail: 
+        if v.__tag == "TestGroup"
+          then 
+            let
+              depth1 = depth;
+              testGroup' = v.__field0;
+            in
+              
+              let
+                log = module."Data.Functor".map module."Data.Functor".functorArray (module."Test.MiraculixLite.Typo".indent depth1) (mkTestGroupLog testGroup');
+                here = 
+                  { failures = module."Control.Applicative".pure module."Data.Monoid.Additive".applicativeAdditive 0;
+                    count = module."Control.Applicative".pure module."Data.Monoid.Additive".applicativeAdditive 0;
+                    log = log;
+                  };
+              in
+                module."Control.Bind".discard module."Control.Bind".discardUnit module."LocalDependency.Effect".bindEffect (module."LocalDependency.Data.Foldable".traverse_ module."LocalDependency.Effect".applicativeEffect module."LocalDependency.Data.Foldable".foldableArray module."Test.MiraculixLite.FFI".trace log) (__unused: module."Control.Bind".bind module."LocalDependency.Effect".bindEffect (module."Data.Functor".map module."LocalDependency.Effect".functorEffect (module."LocalDependency.Data.Foldable".fold module."LocalDependency.Data.Foldable".foldableArray (module."Data.Monoid".monoidRecord module."Prim".undefined (module."Data.Monoid".monoidRecordCons {reflectSymbol = __unused: "count";} (module."Data.Monoid.Additive".monoidAdditive module."Data.Semiring".semiringInt) module."Prim".undefined (module."Data.Monoid".monoidRecordCons {reflectSymbol = __unused: "failures";} (module."Data.Monoid.Additive".monoidAdditive module."Data.Semiring".semiringInt) module."Prim".undefined (module."Data.Monoid".monoidRecordCons {reflectSymbol = __unused: "log";} module."Data.Monoid".monoidArray module."Prim".undefined module."Data.Monoid".monoidRecordNil))))) (module."LocalDependency.Data.Traversable".traverse module."LocalDependency.Data.Traversable".traversableArray module."LocalDependency.Effect".applicativeEffect (getSummary' (module."Data.Semiring".add module."Data.Semiring".semiringInt depth1 1)) testGroup'.tests)) (children: module."Control.Applicative".pure module."LocalDependency.Effect".applicativeEffect (module."Data.Semigroup".append (module."Data.Semigroup".semigroupRecord module."Prim".undefined (module."Data.Semigroup".semigroupRecordCons {reflectSymbol = __unused: "count";} module."Prim".undefined (module."Data.Semigroup".semigroupRecordCons {reflectSymbol = __unused: "failures";} module."Prim".undefined (module."Data.Semigroup".semigroupRecordCons {reflectSymbol = __unused: "log";} module."Prim".undefined module."Data.Semigroup".semigroupRecordNil module."Data.Semigroup".semigroupArray) (module."Data.Monoid.Additive".semigroupAdditive module."Data.Semiring".semiringInt)) (module."Data.Monoid.Additive".semigroupAdditive module."Data.Semiring".semiringInt))) here children)))
+          else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/Test/Miraculix/TestTree.purs at 63:1 - 63:49";
+    in
+      __pattern0 (__pattern1 __patternFail);
+  getSummary = tt: module."Control.Bind".bind module."LocalDependency.Effect".bindEffect (getSummary' 0 tt) 
+    ( summary: 
+      let
+        footer = module."Data.Semigroup".append module."Data.Semigroup".semigroupArray [""] (module."Test.MiraculixLite.Summary".printSummaryFooter summary);
+      in
+        module."Control.Bind".discard module."Control.Bind".discardUnit module."LocalDependency.Effect".bindEffect (module."LocalDependency.Data.Foldable".traverse_ module."LocalDependency.Effect".applicativeEffect module."LocalDependency.Data.Foldable".foldableArray module."Test.MiraculixLite.FFI".trace footer) 
+        ( __unused: module."Control.Bind".discard module."Control.Bind".discardUnit module."LocalDependency.Effect".bindEffect (module."Data.Function".apply (module."Control.Applicative".when module."LocalDependency.Effect".applicativeEffect (module."Data.Eq".notEq (module."Data.Monoid.Additive".eqAdditive module."Data.Eq".eqInt) summary.failures (module."Control.Applicative".pure module."Data.Monoid.Additive".applicativeAdditive 0))) (module."Test.MiraculixLite.FFI".abort "Test suite failed")) 
+          ( __unused: module."Data.Function".apply (module."Control.Applicative".pure module."LocalDependency.Effect".applicativeEffect) 
+            ( 
+              let
+                v = summary;
+              in
+                
+                { log = module."Data.Semigroup".append module."Data.Semigroup".semigroupArray summary.log footer;
+                  count = v.count;
+                  failures = v.failures;
+                }
+            )
+          )
+        )
+    );
+in
+  {inherit testCase testGroup getSummary;}
+;
+
+Test-MiraculixLite-Typo_default-nix = 
+let
+  module = 
+    { "Data.Semigroup" = Data-Semigroup_default-nix;
+      "Data.Semiring" = Data-Semiring_default-nix;
+      "Prelude" = Prelude_default-nix;
+      "Test.MiraculixLite.FFI" = Test-MiraculixLite-FFI_default-nix;
+    };
+  Red = {__tag = "Red";};
+  Green = {__tag = "Green";};
+  Yellow = {__tag = "Yellow";};
+  withBullet = txt: module."Data.Semigroup".append module."Data.Semigroup".semigroupString module."Test.MiraculixLite.FFI".bullet (module."Data.Semigroup".append module."Data.Semigroup".semigroupString " " txt);
+  toColorCode = c: 
+    let
+      __pattern0 = __fail: if c.__tag == "Red" then "[31m" else __fail;
+      __pattern1 = __fail: if c.__tag == "Green" then "[32m" else __fail;
+      __pattern2 = __fail: if c.__tag == "Yellow" then "[33m" else __fail;
+      __patternFail = builtins.throw "Pattern match failure in .spago/miraculix-lite/9b3a8ced22c78fe0e8ea1cd7352df5f5dae1dfbd/src/Test/Miraculix/Typo.purs at 23:17 - 26:25";
+    in
+      __pattern0 (__pattern1 (__pattern2 __patternFail));
+  resetColor = "[0m";
+  indent = n: line: 
+    let
+      maxSpaces = "                    ";
+      spaces = module."Test.MiraculixLite.FFI".substring 0 (module."Data.Semiring".mul module."Data.Semiring".semiringInt n 2) maxSpaces;
+    in
+      module."Data.Semigroup".append module."Data.Semigroup".semigroupString spaces line;
+  fontColor = color: txt: module."Data.Semigroup".append module."Data.Semigroup".semigroupString (toColorCode color) (module."Data.Semigroup".append module."Data.Semigroup".semigroupString txt resetColor);
+in
+  {inherit withBullet indent fontColor Red Green Yellow;}
+;
+
+Test-MiraculixLite_default-nix = 
+let
+  module = 
+    { "Control.Applicative" = Control-Applicative_default-nix;
+      "Control.Bind" = Control-Bind_default-nix;
+      "Data.Function" = Data-Function_default-nix;
+      "LocalDependency.Effect" = LocalDependency-Effect_default-nix;
+      "Prelude" = Prelude_default-nix;
+      "Test.MiraculixLite.Assertion" = Test-MiraculixLite-Assertion_default-nix;
+      "Test.MiraculixLite.FFI" = Test-MiraculixLite-FFI_default-nix;
+      "Test.MiraculixLite.Summary" = Test-MiraculixLite-Summary_default-nix;
+      "Test.MiraculixLite.TestTree" = Test-MiraculixLite-TestTree_default-nix;
+    };
+  runTests = tt: module."Control.Bind".bind module."LocalDependency.Effect".bindEffect (module."Test.MiraculixLite.TestTree".getSummary tt) (summary: module."Data.Function".apply (module."Control.Applicative".pure module."LocalDependency.Effect".applicativeEffect) (module."Data.Function".apply module."Test.MiraculixLite.FFI".mkReport (module."Test.MiraculixLite.Summary".printSummary summary)));
+in
+  
+  { inherit runTests;
+    inherit (module."Test.MiraculixLite.Assertion") assert- assertEq assertGt assertLt;
+    inherit (module."Test.MiraculixLite.FFI");
+    inherit (module."Test.MiraculixLite.TestTree") testCase testGroup;
+  }
+;
+
+Test-Util_default-nix = 
+let
+  module = {"Foreign" = Foreign_default-nix;};
+  foreign = Test-Util_foreign-nix;
+  eval = foreign.eval;
+in
+  {inherit eval;}
+;
+
+Test-Util_foreign-nix = {
+  eval = str: import (builtins.toFile "nix-code" str);
+}
+
+;
+
+Tests-Test-Miraculix-Nix_default-nix = 
+let
+  module = 
+    { "Data.Eq" = Data-Eq_default-nix;
+      "Data.Function" = Data-Function_default-nix;
+      "Data.Show" = Data-Show_default-nix;
+      "Prelude" = Prelude_default-nix;
+      "Test.Miraculix.Nix.Internal" = Test-Miraculix-Nix-Internal_default-nix;
+      "Test.MiraculixLite" = Test-MiraculixLite_default-nix;
+      "Test.MiraculixLite.Assertion" = Test-MiraculixLite-Assertion_default-nix;
+      "Test.MiraculixLite.TestTree" = Test-MiraculixLite-TestTree_default-nix;
+      "Test.Util" = Test-Util_default-nix;
+    };
+  tests = module."Test.MiraculixLite.TestTree".testGroup "Test.Miraculix.Nix.Internal" [(module."Test.MiraculixLite.TestTree".testGroup "nixShow" [(module."Test.MiraculixLite.TestTree".testGroup "attrSet" [(module."Data.Function".apply (module."Test.MiraculixLite.TestTree".testCase "empty") (module."Test.MiraculixLite.Assertion".assertEq module."Data.Show".showString module."Data.Eq".eqString (module."Test.Miraculix.Nix.Internal".nixShow (module."Test.Util".eval "{ }")) "{ }"))
+    (module."Data.Function".apply (module."Test.MiraculixLite.TestTree".testCase "with fields") (module."Test.MiraculixLite.Assertion".assertEq module."Data.Show".showString module."Data.Eq".eqString (module."Test.Miraculix.Nix.Internal".nixShow (module."Test.Util".eval "{ x = 1; y = 2; }")) "{ x = 1; y = 2; }"))])
+    (module."Test.MiraculixLite.TestTree".testGroup "boolean" [(module."Data.Function".apply (module."Test.MiraculixLite.TestTree".testCase "true") (module."Test.MiraculixLite.Assertion".assertEq module."Data.Show".showString module."Data.Eq".eqString (module."Test.Miraculix.Nix.Internal".nixShow (module."Test.Util".eval "true")) "true"))
+    (module."Data.Function".apply (module."Test.MiraculixLite.TestTree".testCase "false") (module."Test.MiraculixLite.Assertion".assertEq module."Data.Show".showString module."Data.Eq".eqString (module."Test.Miraculix.Nix.Internal".nixShow (module."Test.Util".eval "false")) "false"))])
+    (module."Test.MiraculixLite.TestTree".testGroup "path" [(module."Data.Function".apply (module."Test.MiraculixLite.TestTree".testCase "absolute path") (module."Test.MiraculixLite.Assertion".assertEq module."Data.Show".showString module."Data.Eq".eqString (module."Test.Miraculix.Nix.Internal".nixShow (module."Test.Util".eval "/foo/abr")) "/foo/abr"))])
+    (module."Test.MiraculixLite.TestTree".testGroup "number" [(module."Data.Function".apply (module."Test.MiraculixLite.TestTree".testCase "number with fractional digits") (module."Test.MiraculixLite.Assertion".assertEq module."Data.Show".showString module."Data.Eq".eqString (module."Test.Miraculix.Nix.Internal".nixShow (module."Test.Util".eval "12.0")) "12.000000"))])
+    (module."Test.MiraculixLite.TestTree".testGroup "function" [(module."Data.Function".apply (module."Test.MiraculixLite.TestTree".testCase "tagged placeholder") (module."Test.MiraculixLite.Assertion".assertEq module."Data.Show".showString module."Data.Eq".eqString (module."Test.Miraculix.Nix.Internal".nixShow (module."Test.Util".eval "x: y: x + y")) "<function>"))])
+    (module."Test.MiraculixLite.TestTree".testGroup "int" [(module."Data.Function".apply (module."Test.MiraculixLite.TestTree".testCase "positive") (module."Test.MiraculixLite.Assertion".assertEq module."Data.Show".showString module."Data.Eq".eqString (module."Test.Miraculix.Nix.Internal".nixShow (module."Test.Util".eval "12")) "12"))
+    (module."Data.Function".apply (module."Test.MiraculixLite.TestTree".testCase "negative") (module."Test.MiraculixLite.Assertion".assertEq module."Data.Show".showString module."Data.Eq".eqString (module."Test.Miraculix.Nix.Internal".nixShow (module."Test.Util".eval "-12")) "-12"))])
+    (module."Test.MiraculixLite.TestTree".testGroup "list" [(module."Data.Function".apply (module."Test.MiraculixLite.TestTree".testCase "non empty") (module."Test.MiraculixLite.Assertion".assertEq module."Data.Show".showString module."Data.Eq".eqString (module."Test.Miraculix.Nix.Internal".nixShow (module."Test.Util".eval "[ 1 2 3 ]")) "[ 1 2 3 ]"))
+    (module."Data.Function".apply (module."Test.MiraculixLite.TestTree".testCase "empty") (module."Test.MiraculixLite.Assertion".assertEq module."Data.Show".showString module."Data.Eq".eqString (module."Test.Miraculix.Nix.Internal".nixShow (module."Test.Util".eval "[ ]")) "[ ]"))])
+    (module."Data.Function".apply (module."Test.MiraculixLite.TestTree".testCase "null") (module."Test.MiraculixLite.Assertion".assertEq module."Data.Show".showString module."Data.Eq".eqString (module."Test.Miraculix.Nix.Internal".nixShow (module."Test.Util".eval "null")) "null"))
+    (module."Test.MiraculixLite.TestTree".testGroup "string" [(module."Data.Function".apply (module."Test.MiraculixLite.TestTree".testCase "double single ticks") (module."Test.MiraculixLite.Assertion".assertEq module."Data.Show".showString module."Data.Eq".eqString (module."Test.Miraculix.Nix.Internal".nixShow (module."Test.Util".eval "''foo''")) "\"foo\""))
+    (module."Data.Function".apply (module."Test.MiraculixLite.TestTree".testCase "double ticks") (module."Test.MiraculixLite.Assertion".assertEq module."Data.Show".showString module."Data.Eq".eqString (module."Test.Miraculix.Nix.Internal".nixShow (module."Test.Util".eval "\"foo\"")) "\"foo\""))])
+    (module."Test.MiraculixLite.TestTree".testGroup "nested" [(module."Data.Function".apply (module."Test.MiraculixLite.TestTree".testCase "attrs with lists") (module."Test.MiraculixLite.Assertion".assertEq module."Data.Show".showString module."Data.Eq".eqString (module."Test.Miraculix.Nix.Internal".nixShow (module."Test.Util".eval "{ x = [ 1 2 3 ]; y = { z = [ 1 2 3 ]; }; }")) "{ x = [ 1 2 3 ]; y = { z = [ 1 2 3 ]; }; }"))
+    (module."Data.Function".apply (module."Test.MiraculixLite.TestTree".testCase "lists with lists") (module."Test.MiraculixLite.Assertion".assertEq module."Data.Show".showString module."Data.Eq".eqString (module."Test.Miraculix.Nix.Internal".nixShow (module."Test.Util".eval "[ [ 1 2 3 ] [ 1 2 3 ] ]")) "[ [ 1 2 3 ] [ 1 2 3 ] ]"))])])];
+in
+  {inherit tests;}
 ;
 
 Type-Data-Row_default-nix = 

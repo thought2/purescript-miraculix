@@ -4,3 +4,4 @@ module Test.Miraculix.Nix
 
 import Test.Miraculix.Nix.Internal (assertEq) as Exp
 import Test.Miraculix (testCase, testGroup, runTests) as Exp
+import Test.Miraculix.Assertion (Assertion) as Exp

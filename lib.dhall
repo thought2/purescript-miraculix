@@ -10,6 +10,7 @@
   , "partial"
   , "unsafe-coerce"
   , "tuples"
+  , "arrays"
   ]
 , backend = "purenix"
 , packages = ./packages-locked.dhall

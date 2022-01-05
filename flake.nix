@@ -30,11 +30,13 @@
         defaultPackage = bundle;
 
         packages.nix-miraculix = bundle.Test-Miraculix-Nix_default-nix;
+        packages.docs = bundle.Test-Miraculix-Nix-Docs_default-nix.markdown;
 
         devShell = pkgs.mkShell {
           nativeBuildInputs = [
             pkgs.purenix
             easy-purescript-nix.spago2nix
+            easy-purescript-nix.purty
             pkgs.purescript
             pkgs.spago
             pkgs.nodePackages.purescript-psa

@@ -14,6 +14,7 @@ import Test.Miraculix.Assertion as A
 import Test.Miraculix.FFI (abort, trace)
 import Test.Miraculix.Summary (Summary, printSummaryFooter)
 import Test.Miraculix.Typo (fontColor, indent, withBullet, Color(..))
+import DoctorNix (class ToNixType, NixType(..))
 
 --------------------------------------------------------------------------------
 -- Types
@@ -24,6 +25,9 @@ import Test.Miraculix.Typo (fontColor, indent, withBullet, Color(..))
 data TestTree
   = TestCase TestCase'
   | TestGroup TestGroup'
+
+instance toNixType :: ToNixType TestTree where
+  toNixType _ = Opaque "TestTree" []
 
 type TestCase'
   = { name :: String, assertion :: Assertion }

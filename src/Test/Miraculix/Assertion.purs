@@ -10,6 +10,7 @@ module Test.Miraculix.Assertion
   ) where
 
 import Prelude
+import DoctorNix (class ToNixType, NixType(..))
 import Test.Miraculix.Typo (withBullet, fontColor, Color(..), indent)
 
 --------------------------------------------------------------------------------
@@ -17,6 +18,9 @@ import Test.Miraculix.Typo (withBullet, fontColor, Color(..), indent)
 --------------------------------------------------------------------------------
 newtype Assertion
   = Assertion { result :: Boolean, message :: Array String }
+
+instance toNixType :: ToNixType Assertion where
+  toNixType _ = Opaque "Assertion" []
 
 --------------------------------------------------------------------------------
 -- Constructors
