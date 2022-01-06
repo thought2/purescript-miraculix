@@ -2,13 +2,15 @@ module DoctorNix where
 
 import Prelude
 import Data.Array (fold)
+import Data.Generic.Rep (class Generic)
 import Data.Tuple.Nested (type (/\))
 import Foreign (Foreign)
 import Foreign.Object (Object)
 import Foreign.Path (Path)
-import LocalDependency.Unsafe.Coerce (unsafeCoerce)
 import Prim.RowList (class RowToList, RowList)
+import TS (class ToTsType, genericToTsType, toTsType)
 import Type.Proxy (Proxy(..))
+import Unsafe.Coerce (unsafeCoerce)
 
 data NixType
   = Attrs (Array (String /\ NixType))
@@ -25,6 +27,11 @@ data NixType
   | TypeVar String
   | Attrs' NixType
   | Attrs''
+
+derive instance gen :: Generic NixType _
+
+instance toTsType :: ToTsType NixType where
+  toTsType x = genericToTsType x
 
 class ToNixType a where
   toNixType :: a -> NixType

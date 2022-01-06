@@ -26,11 +26,25 @@
 
         bundle = import ./materialized/bundle.nix;
       in
+      with builtins;
+      with pkgs.lib;
       {
         defaultPackage = bundle;
 
         packages.nix-miraculix = bundle.Test-Miraculix-Nix_default-nix;
         packages.docs = bundle.Test-Miraculix-Nix-Docs_default-nix.markdown;
+        packages.docsJson = pipe
+          (pkgs.writeText "docs.json" bundle.Test-Miraculix-Nix-Docs_default-nix.docsJson)
+          [
+            (file: pkgs.runCommand "docs.json" { } ''${pkgs.nodePackages.prettier}/bin/prettier ${file} > $out'')
+          ];
+
+        packages.tsTypes = pipe
+          (pkgs.writeText "types.ts" bundle.Test-Miraculix-Nix-Docs_default-nix.tsTypes)
+          [
+            (file: pkgs.runCommand "docs.json" { } ''${pkgs.nodePackages.prettier}/bin/prettier ${file} > $out'')
+          ];
+
 
         devShell = pkgs.mkShell {
           nativeBuildInputs = [

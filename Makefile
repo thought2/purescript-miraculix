@@ -39,3 +39,8 @@ materialize: bundle
 
 check-status:
 	bash scripts/check-git-status.sh
+
+generate:
+	rm -rf generated
+	nix build .#docsJson -o generated/docs.json
+	nix build .#tsTypes -o generated/types.ts

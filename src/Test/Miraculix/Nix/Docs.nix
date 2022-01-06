@@ -1,0 +1,3 @@
+with builtins; {
+  inherit toJSON;
+}

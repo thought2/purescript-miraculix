@@ -1,15 +1,16 @@
-module Test.Miraculix.Nix.Docs where
+module Test.Miraculix.Nix.Docs
+  ( docs
+  , tsTypes
+  , docsJson
+  ) where
 
 import DoctorNix
+import Prelude
+import Data.Generic.Rep (class Generic)
+import Data.Show.Generic (genericShow)
+import TS (class ToTsType, TsDoc(..), TsType, TsTypeDecl(..), genericToTsType, render, toTsType)
 import Test.Miraculix.Nix as N
 import Type.Proxy (Proxy(..))
-
-data Foo
-  = Bar Int
-  | Baz
-
-sample :: String -> Boolean
-sample _ = true
 
 docs :: NixDocs
 docs =
@@ -32,6 +33,9 @@ docs =
       ]
   }
 
+tsTypes :: String
+tsTypes = render $ TsDoc [ Type "Docs" (toTsType (Proxy :: _ NixDocs)) ]
+
 -- docs' =
 --   docGroup "miraculix"
 --     [ docType "Assertion" (Proxy :: _ N.Assertion)
@@ -42,5 +46,9 @@ docs =
 --     , docDef "testCase" N.testCase
 --         & descr "..."
 --     ]
-markdown :: String
-markdown = render docs
+-- markdown :: String
+-- markdown = render docs
+foreign import toJSON :: forall a. a -> String
+
+docsJson :: String
+docsJson = toJSON docs

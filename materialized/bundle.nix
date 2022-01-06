@@ -18987,17 +18987,20 @@ DoctorNix_default-nix =
 let
   module = 
     { "Data.Array" = Data-Array_default-nix;
+      "Data.Generic.Rep" = Data-Generic-Rep_default-nix;
       "Data.Monoid" = Data-Monoid_default-nix;
       "Data.Semigroup" = Data-Semigroup_default-nix;
+      "Data.Symbol" = Data-Symbol_default-nix;
       "Data.Tuple.Nested" = Data-Tuple-Nested_default-nix;
       "Data.Unit" = Data-Unit_default-nix;
       "Foreign" = Foreign_default-nix;
       "Foreign.Object" = Foreign-Object_default-nix;
       "Foreign.Path" = Foreign-Path_default-nix;
-      "LocalDependency.Unsafe.Coerce" = LocalDependency-Unsafe-Coerce_default-nix;
       "Prelude" = Prelude_default-nix;
       "Prim.RowList" = import ../Prim.RowList;
+      "TS" = TS_default-nix;
       "Type.Proxy" = Type-Proxy_default-nix;
+      "Unsafe.Coerce" = Unsafe-Coerce_default-nix;
     };
   Attrs = value0: 
     { __tag = "Attrs";
@@ -19043,10 +19046,10 @@ let
           v = dict;
         in
           v.toNixType;
-      __patternFail = builtins.throw "Pattern match failure in src/DoctorNix.purs at 30:3 - 30:28";
+      __patternFail = builtins.throw "Pattern match failure in src/DoctorNix.purs at 37:3 - 37:28";
     in
       __pattern0 __patternFail;
-  toNixType' = dictToNixType: v: toNixType dictToNixType (module."LocalDependency.Unsafe.Coerce".unsafeCoerce module."Data.Unit".unit);
+  toNixType' = dictToNixType: v: toNixType dictToNixType (module."Unsafe.Coerce".unsafeCoerce module."Data.Unit".unit);
   string = {toNixType = v: String;};
   render = v: 
     let
@@ -19058,13 +19061,142 @@ let
         in
           module."Data.Array".fold module."Data.Monoid".monoidString [(module."Data.Semigroup".append module."Data.Semigroup".semigroupString "# " title)
           ""];
-      __patternFail = builtins.throw "Pattern match failure in src/DoctorNix.purs at 82:1 - 82:28";
+      __patternFail = builtins.throw "Pattern match failure in src/DoctorNix.purs at 89:1 - 89:28";
     in
       __pattern0 __patternFail;
   path = {toNixType = v: Path;};
   number = {toNixType = v: Float;};
   nixType = {toNixType = x: x;};
   int = {toNixType = v: Int;};
+  gen = 
+    { to = x: 
+        let
+          __pattern0 = __fail: 
+            if x.__tag == "Inl"
+              then 
+                let
+                  arg = x.__field0;
+                in
+                  Attrs arg
+              else __fail;
+          __pattern1 = __fail: if x.__tag == "Inr" && x.__field0.__tag == "Inl" then Bool else __fail;
+          __pattern2 = __fail: if x.__tag == "Inr" && x.__field0.__tag == "Inr" && x.__field0.__field0.__tag == "Inl" then Path else __fail;
+          __pattern3 = __fail: if x.__tag == "Inr" && x.__field0.__tag == "Inr" && x.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__tag == "Inl" then Float else __fail;
+          __pattern4 = __fail: 
+            if x.__tag == "Inr" && x.__field0.__tag == "Inr" && x.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__tag == "Inl" && x.__field0.__field0.__field0.__field0.__field0.__tag == "Product"
+              then 
+                let
+                  arg = x.__field0.__field0.__field0.__field0.__field0.__field0;
+                  arg1 = x.__field0.__field0.__field0.__field0.__field0.__field1;
+                in
+                  Function arg arg1
+              else __fail;
+          __pattern5 = __fail: if x.__tag == "Inr" && x.__field0.__tag == "Inr" && x.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__tag == "Inl" then Int else __fail;
+          __pattern6 = __fail: 
+            if x.__tag == "Inr" && x.__field0.__tag == "Inr" && x.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inl"
+              then 
+                let
+                  arg = x.__field0.__field0.__field0.__field0.__field0.__field0.__field0;
+                in
+                  List arg
+              else __fail;
+          __pattern7 = __fail: if x.__tag == "Inr" && x.__field0.__tag == "Inr" && x.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inl" then Null else __fail;
+          __pattern8 = __fail: if x.__tag == "Inr" && x.__field0.__tag == "Inr" && x.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inl" then String else __fail;
+          __pattern9 = __fail: 
+            if x.__tag == "Inr" && x.__field0.__tag == "Inr" && x.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inl" && x.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Product"
+              then 
+                let
+                  arg = x.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0;
+                  arg1 = x.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field1;
+                in
+                  Opaque arg arg1
+              else __fail;
+          __pattern10 = __fail: if x.__tag == "Inr" && x.__field0.__tag == "Inr" && x.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inl" then Any else __fail;
+          __pattern11 = __fail: 
+            if x.__tag == "Inr" && x.__field0.__tag == "Inr" && x.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inl"
+              then 
+                let
+                  arg = x.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0;
+                in
+                  TypeVar arg
+              else __fail;
+          __pattern12 = __fail: 
+            if x.__tag == "Inr" && x.__field0.__tag == "Inr" && x.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inl"
+              then 
+                let
+                  arg = x.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0;
+                in
+                  Attrs' arg
+              else __fail;
+          __pattern13 = __fail: if x.__tag == "Inr" && x.__field0.__tag == "Inr" && x.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" then Attrs'' else __fail;
+          __patternFail = builtins.throw "Pattern match failure in src/DoctorNix.purs at 31:1 - 31:41";
+        in
+          __pattern0 (__pattern1 (__pattern2 (__pattern3 (__pattern4 (__pattern5 (__pattern6 (__pattern7 (__pattern8 (__pattern9 (__pattern10 (__pattern11 (__pattern12 (__pattern13 __patternFail)))))))))))));
+      from = x: 
+        let
+          __pattern0 = __fail: 
+            if x.__tag == "Attrs"
+              then 
+                let
+                  arg = x.__field0;
+                in
+                  module."Data.Generic.Rep".Inl arg
+              else __fail;
+          __pattern1 = __fail: if x.__tag == "Bool" then module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inl module."Data.Generic.Rep".NoArguments) else __fail;
+          __pattern2 = __fail: if x.__tag == "Path" then module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inl module."Data.Generic.Rep".NoArguments)) else __fail;
+          __pattern3 = __fail: if x.__tag == "Float" then module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inl module."Data.Generic.Rep".NoArguments))) else __fail;
+          __pattern4 = __fail: 
+            if x.__tag == "Function"
+              then 
+                let
+                  arg = x.__field0;
+                  arg1 = x.__field1;
+                in
+                  module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inl (module."Data.Generic.Rep".Product arg arg1)))))
+              else __fail;
+          __pattern5 = __fail: if x.__tag == "Int" then module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inl module."Data.Generic.Rep".NoArguments))))) else __fail;
+          __pattern6 = __fail: 
+            if x.__tag == "List"
+              then 
+                let
+                  arg = x.__field0;
+                in
+                  module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inl arg))))))
+              else __fail;
+          __pattern7 = __fail: if x.__tag == "Null" then module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inl module."Data.Generic.Rep".NoArguments))))))) else __fail;
+          __pattern8 = __fail: if x.__tag == "String" then module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inl module."Data.Generic.Rep".NoArguments)))))))) else __fail;
+          __pattern9 = __fail: 
+            if x.__tag == "Opaque"
+              then 
+                let
+                  arg = x.__field0;
+                  arg1 = x.__field1;
+                in
+                  module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inl (module."Data.Generic.Rep".Product arg arg1))))))))))
+              else __fail;
+          __pattern10 = __fail: if x.__tag == "Any" then module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inl module."Data.Generic.Rep".NoArguments)))))))))) else __fail;
+          __pattern11 = __fail: 
+            if x.__tag == "TypeVar"
+              then 
+                let
+                  arg = x.__field0;
+                in
+                  module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inl arg)))))))))))
+              else __fail;
+          __pattern12 = __fail: 
+            if x.__tag == "Attrs'"
+              then 
+                let
+                  arg = x.__field0;
+                in
+                  module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inl arg))))))))))))
+              else __fail;
+          __pattern13 = __fail: if x.__tag == "Attrs''" then module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr module."Data.Generic.Rep".NoArguments)))))))))))) else __fail;
+          __patternFail = builtins.throw "Pattern match failure in src/DoctorNix.purs at 31:1 - 31:41";
+        in
+          __pattern0 (__pattern1 (__pattern2 (__pattern3 (__pattern4 (__pattern5 (__pattern6 (__pattern7 (__pattern8 (__pattern9 (__pattern10 (__pattern11 (__pattern12 (__pattern13 __patternFail)))))))))))));
+    };
+  toTsType = {toTsType = x: module."TS".genericToTsType gen (module."TS".sum (module."TS".noConstr {reflectSymbol = __unused: "Attrs";} (module."TS".arg (module."TS".array (module."TS".tuple module."TS".string toTsType)))) (module."TS".sum (module."TS".noConstr {reflectSymbol = __unused: "Bool";} module."TS".noArgs) (module."TS".sum (module."TS".noConstr {reflectSymbol = __unused: "Path";} module."TS".noArgs) (module."TS".sum (module."TS".noConstr {reflectSymbol = __unused: "Float";} module."TS".noArgs) (module."TS".sum (module."TS".noConstr {reflectSymbol = __unused: "Function";} (module."TS".prod (module."TS".arg toTsType) (module."TS".arg toTsType))) (module."TS".sum (module."TS".noConstr {reflectSymbol = __unused: "Int";} module."TS".noArgs) (module."TS".sum (module."TS".noConstr {reflectSymbol = __unused: "List";} (module."TS".arg toTsType)) (module."TS".sum (module."TS".noConstr {reflectSymbol = __unused: "Null";} module."TS".noArgs) (module."TS".sum (module."TS".noConstr {reflectSymbol = __unused: "String";} module."TS".noArgs) (module."TS".sum (module."TS".noConstr {reflectSymbol = __unused: "Opaque";} (module."TS".prod (module."TS".arg module."TS".string) (module."TS".arg (module."TS".array module."TS".string)))) (module."TS".sum (module."TS".noConstr {reflectSymbol = __unused: "Any";} module."TS".noArgs) (module."TS".sum (module."TS".noConstr {reflectSymbol = __unused: "TypeVar";} (module."TS".arg module."TS".string)) (module."TS".sum (module."TS".noConstr {reflectSymbol = __unused: "Attrs'";} (module."TS".arg toTsType)) (module."TS".noConstr {reflectSymbol = __unused: "Attrs''";} module."TS".noArgs)))))))))))))) x;};
   function = dictToNixType: dictToNixType1: {toNixType = v: Function (toNixType' dictToNixType module."Type.Proxy".Proxy) (toNixType' dictToNixType1 module."Type.Proxy".Proxy);};
   foreign' = {toNixType = v: Any;};
   foo = dict: 
@@ -19074,7 +19206,7 @@ let
           v = dict;
         in
           v.foo;
-      __patternFail = builtins.throw "Pattern match failure in src/DoctorNix.purs at 36:3 - 36:29";
+      __patternFail = builtins.throw "Pattern match failure in src/DoctorNix.purs at 43:3 - 43:29";
     in
       __pattern0 __patternFail;
   record = dictRowToList: dictFoo: {toNixType = v: foo dictFoo module."Type.Proxy".Proxy;};
@@ -19083,7 +19215,7 @@ let
   attrs' = dictToNixType: {toNixType = v: Attrs' (toNixType' dictToNixType module."Type.Proxy".Proxy);};
   array = dictToNixType: {toNixType = v: List (toNixType' dictToNixType module."Type.Proxy".Proxy);};
 in
-  {inherit foo toNixType Attrs Bool Path Float Function Int List Null String Opaque Any TypeVar Attrs' Attrs'' toNixType' render record boolean path number function int array unit string foreign' attrs'' attrs' nixType;}
+  {inherit foo toNixType Attrs Bool Path Float Function Int List Null String Opaque Any TypeVar Attrs' Attrs'' toNixType' render gen toTsType record boolean path number function int array unit string foreign' attrs'' attrs' nixType;}
 ;
 
 Effect_default-nix = 
@@ -31758,19 +31890,22 @@ in
 Test-Miraculix-Nix-Docs_default-nix = 
 let
   module = 
-    { "DoctorNix" = DoctorNix_default-nix;
+    { "Data.Function" = Data-Function_default-nix;
+      "Data.Generic.Rep" = Data-Generic-Rep_default-nix;
+      "Data.Show.Generic" = Data-Show-Generic_default-nix;
+      "Data.Symbol" = Data-Symbol_default-nix;
+      "DoctorNix" = DoctorNix_default-nix;
+      "Prelude" = Prelude_default-nix;
+      "TS" = TS_default-nix;
       "Test.Miraculix.Assertion" = Test-Miraculix-Assertion_default-nix;
       "Test.Miraculix.Nix" = Test-Miraculix-Nix_default-nix;
       "Test.Miraculix.Nix.Internal" = Test-Miraculix-Nix-Internal_default-nix;
       "Test.Miraculix.TestTree" = Test-Miraculix-TestTree_default-nix;
       "Type.Proxy" = Type-Proxy_default-nix;
     };
-  Bar = value0: 
-    { __tag = "Bar";
-      __field0 = value0;
-    };
-  Baz = {__tag = "Baz";};
-  sample = v: true;
+  foreign = Test-Miraculix-Nix-Docs_foreign-nix;
+  toJSON = foreign.toJSON;
+  tsTypes = module."Data.Function".apply (module."TS".render module."TS".renderTsDoc) [(module."TS".Type "Docs" (module."TS".toTsType (module."TS".record module."Prim".undefined (module."TS".toTsTypeRLCons (module."TS".toTsTypeRLCons (module."TS".toTsTypeRLCons module."TS".toTsTypeRLNil (module."TS".array (module."TS".record module."Prim".undefined (module."TS".toTsTypeRLCons (module."TS".toTsTypeRLCons (module."TS".toTsTypeRLCons module."TS".toTsTypeRLNil module."DoctorNix".toTsType {reflectSymbol = __unused: "type_";}) module."TS".string {reflectSymbol = __unused: "name";}) module."TS".string {reflectSymbol = __unused: "descr";}))) {reflectSymbol = __unused: "types";}) module."TS".string {reflectSymbol = __unused: "title";}) (module."TS".array (module."TS".record module."Prim".undefined (module."TS".toTsTypeRLCons (module."TS".toTsTypeRLCons (module."TS".toTsTypeRLCons module."TS".toTsTypeRLNil module."DoctorNix".toTsType {reflectSymbol = __unused: "type_";}) module."TS".string {reflectSymbol = __unused: "name";}) module."TS".string {reflectSymbol = __unused: "descr";}))) {reflectSymbol = __unused: "defs";})) module."Type.Proxy".Proxy))];
   docs = 
     { title = "miraculix";
       types = 
@@ -31793,9 +31928,15 @@ let
           }
         ];
     };
-  markdown = module."DoctorNix".render docs;
+  docsJson = toJSON docs;
 in
-  {inherit Bar Baz sample docs markdown;}
+  {inherit docs tsTypes docsJson;}
+;
+
+Test-Miraculix-Nix-Docs_foreign-nix = with builtins; {
+  inherit toJSON;
+}
+
 ;
 
 Test-Miraculix-Nix-Internal_default-nix = 
@@ -32507,6 +32648,219 @@ let
     (module."Data.Function".apply (module."Test.MiraculixLite.TestTree".testCase "lists with lists") (module."Test.MiraculixLite.Assertion".assertEq module."Data.Show".showString module."Data.Eq".eqString (module."Test.Miraculix.Nix.Internal".nixShow (module."Test.Util".eval "[ [ 1 2 3 ] [ 1 2 3 ] ]")) "[ [ 1 2 3 ] [ 1 2 3 ] ]"))])])];
 in
   {inherit tests;}
+;
+
+TS_default-nix = 
+let
+  module = 
+    { "Data.Array" = Data-Array_default-nix;
+      "Data.Function" = Data-Function_default-nix;
+      "Data.Functor" = Data-Functor_default-nix;
+      "Data.Generic.Rep" = Data-Generic-Rep_default-nix;
+      "Data.Monoid" = Data-Monoid_default-nix;
+      "Data.Semigroup" = Data-Semigroup_default-nix;
+      "Data.Symbol" = Data-Symbol_default-nix;
+      "Data.Tuple" = Data-Tuple_default-nix;
+      "Data.Tuple.Nested" = Data-Tuple-Nested_default-nix;
+      "Foreign.Object" = Foreign-Object_default-nix;
+      "Prelude" = Prelude_default-nix;
+      "Prim.RowList" = import ../Prim.RowList;
+      "Type.Proxy" = Type-Proxy_default-nix;
+    };
+  Boolean = {__tag = "Boolean";};
+  Number = {__tag = "Number";};
+  String = {__tag = "String";};
+  Array = value0: 
+    { __tag = "Array";
+      __field0 = value0;
+    };
+  Tuple = value0: 
+    { __tag = "Tuple";
+      __field0 = value0;
+    };
+  Unknown = {__tag = "Unknown";};
+  Any = {__tag = "Any";};
+  Void = {__tag = "Void";};
+  Null = {__tag = "Null";};
+  Undefined = {__tag = "Undefined";};
+  Never = {__tag = "Never";};
+  Object = value0: 
+    { __tag = "Object";
+      __field0 = value0;
+    };
+  Record = value0: 
+    { __tag = "Record";
+      __field0 = value0;
+    };
+  Function = value0: 
+    { __tag = "Function";
+      __field0 = value0;
+    };
+  Type = value0: value1: 
+    { __tag = "Type";
+      __field0 = value0;
+      __field1 = value1;
+    };
+  TsDoc = x: x;
+  ToTsTypeRL-Dict = x: x;
+  ToTsType-Dict = x: x;
+  Render-Dict = x: x;
+  Foo-Dict = x: x;
+  unit = {toTsType = v: Null;};
+  toTsTypeRl = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.toTsTypeRl;
+      __patternFail = builtins.throw "Pattern match failure in src/TS.purs at 110:3 - 110:53";
+    in
+      __pattern0 __patternFail;
+  toTsTypeRLNil = {toTsTypeRl = v: [];};
+  toTsType = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.toTsType;
+      __patternFail = builtins.throw "Pattern match failure in src/TS.purs at 48:3 - 48:32";
+    in
+      __pattern0 __patternFail;
+  toTsTypeRLCons = dictToTsTypeRL: dictToTsType: dictIsSymbol: {toTsTypeRl = v: module."Data.Semigroup".append module."Data.Semigroup".semigroupArray [(module."Data.Tuple".Tuple (module."Data.Symbol".reflectSymbol dictIsSymbol module."Type.Proxy".Proxy) (toTsType dictToTsType module."Type.Proxy".Proxy))] (toTsTypeRl dictToTsTypeRL module."Type.Proxy".Proxy);};
+  sum = dictFoo: dictFoo1: {bar = v: Void;};
+  string = {toTsType = v: String;};
+  render = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.render;
+      __patternFail = builtins.throw "Pattern match failure in src/TS.purs at 126:3 - 126:24";
+    in
+      __pattern0 __patternFail;
+  renderTsType = 
+    { render = 
+        let
+          renderKeyVal = v: 
+            let
+              __pattern0 = __fail: 
+                if v.__tag == "Tuple"
+                  then 
+                    let
+                      k = v.__field0;
+                      v1 = v.__field1;
+                    in
+                      module."Data.Semigroup".append module."Data.Semigroup".semigroupString k (module."Data.Semigroup".append module."Data.Semigroup".semigroupString ":" (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (render renderTsType v1) ";"))
+                  else __fail;
+              __patternFail = builtins.throw "Pattern match failure in src/TS.purs at 153:5 - 153:56";
+            in
+              __pattern0 __patternFail;
+        in
+          v: 
+          let
+            __pattern0 = __fail: if v.__tag == "Boolean" then "boolean" else __fail;
+            __pattern1 = __fail: if v.__tag == "Number" then "number" else __fail;
+            __pattern2 = __fail: if v.__tag == "String" then "string" else __fail;
+            __pattern3 = __fail: 
+              if v.__tag == "Array"
+                then 
+                  let
+                    t = v.__field0;
+                  in
+                    module."Data.Semigroup".append module."Data.Semigroup".semigroupString "Array<" (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (render renderTsType t) ">")
+                else __fail;
+            __pattern4 = __fail: 
+              if v.__tag == "Tuple"
+                then 
+                  let
+                    ts = v.__field0;
+                  in
+                    module."Data.Semigroup".append module."Data.Semigroup".semigroupString "[" (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Function".apply (module."Data.Array".intercalate module."Data.Monoid".monoidString ",") (module."Data.Functor".map module."Data.Functor".functorArray (render renderTsType) ts)) "]")
+                else __fail;
+            __pattern5 = __fail: if v.__tag == "Unknown" then "unknown" else __fail;
+            __pattern6 = __fail: if v.__tag == "Any" then "any" else __fail;
+            __pattern7 = __fail: if v.__tag == "Void" then "void" else __fail;
+            __pattern8 = __fail: if v.__tag == "Null" then "null" else __fail;
+            __pattern9 = __fail: if v.__tag == "Undefined" then "undefined" else __fail;
+            __pattern10 = __fail: if v.__tag == "Never" then "never" else __fail;
+            __pattern11 = __fail: 
+              if v.__tag == "Object"
+                then 
+                  let
+                    t = v.__field0;
+                  in
+                    module."Data.Semigroup".append module."Data.Semigroup".semigroupString "Record<string, " (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (render renderTsType t) ">")
+                else __fail;
+            __pattern12 = __fail: 
+              if v.__tag == "Record"
+                then 
+                  let
+                    xs = v.__field0;
+                  in
+                    module."Data.Semigroup".append module."Data.Semigroup".semigroupString "{" (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Function".apply (module."Data.Array".fold module."Data.Monoid".monoidString) (module."Data.Functor".map module."Data.Functor".functorArray renderKeyVal xs)) "}")
+                else __fail;
+            __pattern13 = __fail: if v.__tag == "Function" then "<todo>" else __fail;
+            __patternFail = builtins.throw "Pattern match failure in src/TS.purs at 137:12 - 151:27";
+          in
+            __pattern0 (__pattern1 (__pattern2 (__pattern3 (__pattern4 (__pattern5 (__pattern6 (__pattern7 (__pattern8 (__pattern9 (__pattern10 (__pattern11 (__pattern12 (__pattern13 __patternFail)))))))))))));
+    };
+  renderTsTypeDecl = 
+    { render = v: 
+        let
+          __pattern0 = __fail: 
+            if v.__tag == "Type"
+              then 
+                let
+                  name = v.__field0;
+                  t = v.__field1;
+                in
+                  module."Data.Semigroup".append module."Data.Semigroup".semigroupString "type " (module."Data.Semigroup".append module."Data.Semigroup".semigroupString name (module."Data.Semigroup".append module."Data.Semigroup".semigroupString " = " (render renderTsType t)))
+              else __fail;
+          __patternFail = builtins.throw "Pattern match failure in src/TS.purs at 133:12 - 134:56";
+        in
+          __pattern0 __patternFail;
+    };
+  renderTsDoc = 
+    { render = v: 
+        let
+          __pattern0 = __fail: 
+            let
+              ds = v;
+            in
+              module."Data.Function".apply (module."Data.Array".intercalate module."Data.Monoid".monoidString "
+") (module."Data.Functor".map module."Data.Functor".functorArray (render renderTsTypeDecl) ds);
+          __patternFail = builtins.throw "Pattern match failure in src/TS.purs at 129:12 - 130:49";
+        in
+          __pattern0 __patternFail;
+    };
+  record = dictRowToList: dictToTsTypeRL: {toTsType = v: module."Data.Function".apply Record (toTsTypeRl dictToTsTypeRL module."Type.Proxy".Proxy);};
+  prod = dictFoo: dictFoo1: {bar = v: Void;};
+  object = dictToTsType: {toTsType = v: module."Data.Function".apply Object (toTsType dictToTsType module."Type.Proxy".Proxy);};
+  number = {toTsType = v: Number;};
+  noConstr = dictIsSymbol: dictFoo: {bar = v: Void;};
+  noC = {bar = v: Void;};
+  noArgs = {bar = v: Void;};
+  int = {toTsType = v: Number;};
+  boolean = {toTsType = v: Boolean;};
+  bar = dict: 
+    let
+      __pattern0 = __fail: 
+        let
+          v = dict;
+        in
+          v.bar;
+      __patternFail = builtins.throw "Pattern match failure in src/TS.purs at 81:3 - 81:27";
+    in
+      __pattern0 __patternFail;
+  genericToTsType = dictGeneric: dictFoo: x: bar dictFoo module."Type.Proxy".Proxy;
+  array = dictToTsType: {toTsType = v: module."Data.Function".apply Array (toTsType dictToTsType module."Type.Proxy".Proxy);};
+  arg = dictToTsType: {bar = v: Void;};
+  tuple = dictToTsType: dictToTsType1: {toTsType = x: genericToTsType module."Data.Tuple".genericTuple (noConstr {reflectSymbol = __unused: "Tuple";} (prod (arg dictToTsType) (arg dictToTsType1))) x;};
+in
+  {inherit bar render toTsType toTsTypeRl Boolean Number String Array Tuple Unknown Any Void Null Undefined Never Object Record Function Type TsDoc genericToTsType boolean number int string unit object array record tuple noC sum noConstr noArgs prod arg toTsTypeRLNil toTsTypeRLCons renderTsDoc renderTsTypeDecl renderTsType;}
 ;
 
 Type-Data-Row_default-nix = 
