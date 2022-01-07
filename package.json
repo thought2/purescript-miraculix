@@ -1,6 +1,10 @@
 {
   "private": true,
   "workspaces": [
-    "pkgs-ts/*"
-  ]
+    "pkgs-ts/*",
+    "tasks"
+  ],
+  "scripts": {
+    "go": "ts-node run.ts"
+  }
 }

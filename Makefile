@@ -15,13 +15,23 @@ build_: build
 docs:
 	spago docs
 
+docs-nix:
+	yarn workspace docs build 
+
+dists:
+	rm -rf dist
+	mkdir -p dist/docs/purescript
+	cp -r generated-docs/html/** -t dist/docs/purescript
+	mkdir -p dist/docs/nix
+	cp -r pkgs-ts/docs/public/** -t dist/docs/nix
+
 run-nix-example: build
 run-nix-example:
 	nix-build nix-example/test.nix
 
 tests:
 	spago build --config tests.dhall && \
-	nix-build -E '(import ./output/Test.Main/default.nix).main null'
+	nix-build -E '(import ./output/Test.Main/default.nix).main null
 
 lockPkgs:
 	yarn workspace lock-pkgs ts-node src/index.ts

@@ -10,3 +10,4 @@ package-lock.json
 result
 /generated-docs
 node_modules/
+/dist
