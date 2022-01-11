@@ -9,3 +9,9 @@ build_: build
 
 docs:
 	spago docs
+
+install:
+	cd mk-miraculix-lite; yarn install
+
+buildLite:
+	yarn --cwd mk-miraculix-lite/ run ts-node script.ts

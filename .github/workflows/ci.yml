@@ -22,8 +22,20 @@ jobs:
       - name: Generate docs
         run: nix develop --command make docs
 
+      - name: Install yarn packages
+        run: nix develop --command make install
+
+      - name: Build miraculix-lite
+        run: nix develop --command make buildLite
+
       - name: Deploy Docs to GH Pages
         uses: JamesIves/github-pages-deploy-action@4.1.7
         with:
           branch: gh-pages
           folder: generated-docs/html
+
+      - name: Deploy miraculix-lite to branch
+        uses: JamesIves/github-pages-deploy-action@4.1.7
+        with:
+          branch: lite
+          folder: output-miraculix-lite
