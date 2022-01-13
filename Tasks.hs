@@ -96,11 +96,11 @@ runNixExample =
     (pure ())
     (\_ ctx -> sh ctx "nix-build nix-example/test.nix")
 
-test :: Task ()
-test =
+psTest :: Task ()
+psTest =
   task
-    ("test", "")
-    []
+    ("ps-test", "")
+    [dep psClean ()]
     (pure ())
     ( \_ ctx -> do
         sh ctx "spago build --config tests.dhall"
@@ -164,7 +164,7 @@ allTasks =
     mk tsInstall,
     mk dist,
     mk runNixExample,
-    mk test,
+    mk psTest,
     mk lockPkgs,
     mk bundle,
     mk materialize,

@@ -26,7 +26,7 @@ import Unsafe.Coerce (unsafeCoerce)
 --------------------------------------------------------------------------------
 
 colorWheel :: Int -> (Monoid m, IsString m) => m -> m
-colorWheel i = colors !! (i `mod` length colors)
+colorWheel i = C.cyan -- colors !! (i `mod` length colors)
   where
     colors = [C.blue, C.magenta, C.cyan, C.yellow]
 
@@ -60,15 +60,15 @@ dep (Task tn d deps _ mh) x = Task tn d deps (pure ()) (\_ -> mh x)
 mk :: Task a -> forall b. Task b
 mk t = unsafeCoerce t
 
-scopeCtx :: String -> Int -> Ctx -> Ctx
-scopeCtx scope i (Ctx _ stdout proc_ sh scope' _) =
+scopeCtx :: Opts -> String -> Int -> Ctx -> Ctx
+scopeCtx o scope i (Ctx _ stdout proc_ sh scope' _) =
   Ctx
     (\x -> T.echo $ scopeLn x)
     (\x -> stdout $ scopeLn <$> x)
     proc_
     ( \c -> do
         T.liftIO $ putStrLn ((C.bold ("ᐅ " <> (Tx.unpack c))))
-        T.stdout $ scopeLn . either id id <$> T.inshellWithErr c ""
+        (if _silent o then T.output (T.decodeString "/dev/null") else T.stdout) $ scopeLn . either id id <$> T.inshellWithErr c ""
     )
     scope'
     i
@@ -84,12 +84,12 @@ runTask o stats _ctx _t _x = do
     go idx ctx t x = do
       r <-
         if (_runDeps o)
-          then foldM (\i' t' -> go idx (scopeCtx (taskName t) i' ctx) t' ()) 0 (deps t)
+          then foldM (\i' t' -> go i' (scopeCtx o (taskName t) i' ctx) t' ()) idx (deps t)
           else pure 0
       putStrLn "--------------------------------------------------------------------------------------------------------------"
       putStrLn $ colorWheel r ("TASK " <> show (1 + r) <> "/" <> show (taskCount stats) <> ": " <> taskName t)
       putStrLn "--------------------------------------------------------------------------------------------------------------"
-      mkHandler t x (scopeCtx (taskName t) r ctx) `catch` errorHandler
+      mkHandler t x (scopeCtx o (taskName t) r ctx) `catch` errorHandler
       putStrLn ""
       pure (r + 1)
 
@@ -108,7 +108,7 @@ countTasks _ts t = foldl f 0 _ts
     f i t' = i
 
     go :: Int -> Task a -> Int
-    go i t = 1 + (foldl (\i' t' -> i' + go i' t') i $ deps t)
+    go i t = 1 + (foldl (\i' t' -> go i' t') i $ deps t)
 
 emptyCtx :: Ctx
 emptyCtx =
@@ -143,6 +143,7 @@ type Cmd = Either NativeCmd UserCmd
 
 data Opts = Opts
   { _runDeps :: Bool,
+    _silent :: Bool,
     _task :: Cmd
   }
 
@@ -150,6 +151,7 @@ mkParser :: [Task a] -> Parser Opts
 mkParser ts =
   Opts
     <$> (switch $ long "deps" <> short 'd')
+    <*> (switch $ long "silent" <> short 's')
     <*> (subparser $ fold $ ([nativeCmd] <> parseUserCmds))
   where
     parseUserCmds = mkCommand <$> ts
@@ -203,8 +205,8 @@ getGraph' ts =
     mkEdges t = (mkEdge (taskName t) . taskName) <$> (deps t)
 
 matchCmd :: Opts -> [Task a] -> IO ()
-matchCmd opts@(Opts rd (Left nc)) ts = putStrLn $ getGraph ts
-matchCmd opts@(Opts rd (Right (UserCmd n o))) ts = do
+matchCmd opts@(Opts rd _ (Left nc)) ts = putStrLn $ getGraph ts
+matchCmd opts@(Opts rd _ (Right (UserCmd n o))) ts = do
   traverse_
     ( \t ->
         if taskName t == n
