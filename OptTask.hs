@@ -17,7 +17,7 @@ import qualified System.Console.Chalk as C
 import qualified System.Environment as E
 import qualified System.IO as I
 import qualified System.Process as S
-import Turtle hiding (fold, switch)
+import Turtle hiding (elem, fold, switch)
 import qualified Turtle as T
 import Unsafe.Coerce (unsafeCoerce)
 
@@ -35,6 +35,7 @@ data Ctx = Ctx
     stdout :: forall io. T.MonadIO io => T.Shell T.Line -> io (),
     proc :: forall io. T.MonadIO io => T.Text -> [T.Text] -> T.Shell T.Line -> io T.ExitCode,
     sh :: forall io. T.MonadIO io => T.Text -> io (),
+    sh' :: forall io. T.MonadIO io => T.Text -> Shell T.Line -> io (),
     scope :: [String],
     i :: Int
   }
@@ -61,18 +62,20 @@ mk :: Task a -> forall b. Task b
 mk t = unsafeCoerce t
 
 scopeCtx :: Opts -> String -> Int -> Ctx -> Ctx
-scopeCtx o scope i (Ctx _ stdout proc_ sh scope' _) =
+scopeCtx o scope i (Ctx _ stdout proc_ sh sh' scope' _) =
   Ctx
     (\x -> T.echo $ scopeLn x)
     (\x -> stdout $ scopeLn <$> x)
     proc_
-    ( \c -> do
-        T.liftIO $ putStrLn ((C.bold ("ᐅ " <> (Tx.unpack c))))
-        (if _silent o then T.output (T.decodeString "/dev/null") else T.stdout) $ scopeLn . either id id <$> T.inshellWithErr c ""
-    )
-    scope'
+    (\c -> shell c "")
+    shell
+    (scope : scope')
     i
   where
+    shell c stdin = do
+      T.liftIO $ putStrLn (C.bold ("ᐅ " <> Tx.unpack c))
+      (if _silent o then T.output (T.decodeString "/dev/null") else T.stdout) $ scopeLn . either id id <$> T.inshellWithErr c stdin
+
     scopeLn x = colorWheel i (fromString scope <> ": ") <> x
 
 runTask :: Opts -> Stats -> Ctx -> Task a -> a -> IO ()
@@ -87,7 +90,7 @@ runTask o stats _ctx _t _x = do
           then foldM (\i' t' -> go i' (scopeCtx o (taskName t) i' ctx) t' ()) idx (deps t)
           else pure 0
       putStrLn "--------------------------------------------------------------------------------------------------------------"
-      putStrLn $ colorWheel r ("TASK " <> show (1 + r) <> "/" <> show (taskCount stats) <> ": " <> taskName t)
+      putStrLn (colorWheel r ("TASK " <> show (1 + r) <> "/" <> show (taskCount stats) <> ": " <> taskName t) <> C.gray (join $ (<>) " -> " <$> scope ctx))
       putStrLn "--------------------------------------------------------------------------------------------------------------"
       mkHandler t x (scopeCtx o (taskName t) r ctx) `catch` errorHandler
       putStrLn ""
@@ -108,15 +111,16 @@ countTasks _ts t = foldl f 0 _ts
     f i t' = i
 
     go :: Int -> Task a -> Int
-    go i t = 1 + (foldl (\i' t' -> go i' t') i $ deps t)
+    go i t = 1 + (foldl go i $ deps t)
 
 emptyCtx :: Ctx
 emptyCtx =
   Ctx
-    (T.echo)
-    (T.stdout)
-    (T.proc)
+    T.echo
+    T.stdout
+    T.proc
     (\c -> T.stdout $ either id id <$> T.inshellWithErr c "")
+    (\c si -> T.stdout $ either id id <$> T.inshellWithErr c si)
     []
     0
 
@@ -150,9 +154,9 @@ data Opts = Opts
 mkParser :: [Task a] -> Parser Opts
 mkParser ts =
   Opts
-    <$> (switch $ long "deps" <> short 'd')
-    <*> (switch $ long "silent" <> short 's')
-    <*> (subparser $ fold $ ([nativeCmd] <> parseUserCmds))
+    <$> switch (long "deps" <> short 'd')
+    <*> switch (long "silent" <> short 's')
+    <*> subparser (fold ([nativeCmd] <> parseUserCmds))
   where
     parseUserCmds = mkCommand <$> ts
 
@@ -162,7 +166,7 @@ nativeCmd =
     "_graph"
     ( info
         (pure $ Left NativeCmd)
-        (progDesc $ "show graph")
+        (progDesc "show graph")
     )
 
 mkCommand :: Task a -> Mod CommandFields Cmd
@@ -170,7 +174,7 @@ mkCommand t =
   command
     (taskName t)
     ( info
-        ((\x -> Right $ UserCmd (taskName t) (unsafeCoerce x)) <$> parser t)
+        ((\x -> Right $ UserCmd (taskName t) $ unsafeCoerce x) <$> parser t)
         (progDesc $ descr t)
     )
 
@@ -192,17 +196,22 @@ getGraph' ts =
         NodeStatement
           (fromString $ taskName t)
           [ Attribute "color" "blue",
+            Attribute "style" "filled",
+            Attribute "fillcolor" (if isEntry then "yellow" else "azure"),
             Attribute "shape" "box"
           ]
+      where
+        isEntry = not $ any (\t' -> elem (taskName t) $ taskName <$> deps t') ts
 
-    mkEdge from to =
+    mkEdge from to i =
       StatementEdge $
         EdgeStatement
-          (ListTwo (fromString from) (fromString to) [])
-          [ Attribute "color" "red"
+          (ListTwo (fromString $ taskName from) (fromString $ taskName to) [])
+          [ Attribute "color" "red",
+            Attribute "label" $ fromString $ show i
           ]
 
-    mkEdges t = (mkEdge (taskName t) . taskName) <$> (deps t)
+    mkEdges t = zipWith (mkEdge t) (deps t) [1 ..]
 
 matchCmd :: Opts -> [Task a] -> IO ()
 matchCmd opts@(Opts rd _ (Left nc)) ts = putStrLn $ getGraph ts

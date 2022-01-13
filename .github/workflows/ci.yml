@@ -16,23 +16,17 @@ jobs:
         with:
           nix_path: nixpkgs=channel:nixos-unstable
 
-      - name: Materialize
-        run: ./Tasks.hs -d materialize
+      - name: Check shell
+        run: nix develop --command echo 123
 
-      - name: Check Git Status
-        run: ./Tasks.hs -d check-status
+      - name: Check Tasks.hs
+        run: nix develop --command ./Tasks.hs --help
 
-      - name: Build
-        run: ./Tasks.hs -d build
-
-      - name: Test
-        run: ./Tasks.hs -d test
-
-      - name: Dist
-        run: ./Tasks.hs -d dist
+      - name: CI
+        run: nix develop --command ./Tasks.hs -d ci
 
       - name: Deploy Docs to GH Pages
         uses: JamesIves/github-pages-deploy-action@4.1.7
         with:
           branch: gh-pages
-          folder: generated-docs/html
+          folder: dist

@@ -49,6 +49,9 @@
         devShell = pkgs.mkShell {
           nativeBuildInputs = [
             pkgs.purenix
+            pkgs.stack
+            pkgs.gmp
+            pkgs.zlib
             easy-purescript-nix.spago2nix
             easy-purescript-nix.purty
             pkgs.purescript

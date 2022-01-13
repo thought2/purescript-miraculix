@@ -1,5 +1,6 @@
 #!/usr/bin/env stack
 {- stack
+  --nix
   --no-nix-pure
   script
   --resolver lts-18.21
@@ -15,24 +16,29 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 
+import Data.String (fromString)
+import Data.Text (unpack)
 import OptTask
 import Options.Applicative
+import Turtle hiding (echo, sh, stdout, switch)
 import qualified Turtle as T
 
 --------------------------------------------------------------------------------
 -- Tasks
 --------------------------------------------------------------------------------
 
-psBuild :: Task Bool
+psBuild :: Task ()
 psBuild =
   task
     ("ps-build", "Build the PureScript project")
-    [dep psClean ()]
-    (switch $ long "strict")
+    [ dep psClean (),
+      dep psTest ()
+    ]
+    (pure ())
     ( \_ ctx -> do
         echo ctx "Hello, build!"
-        sh ctx "spago build --purs-args --censor-lib --strict --config lib.dhall"
-    )
+        sh ctx "spago build --purs-args '--censor-lib' --config lib.dhall"
+    ) -- TODO: fix warnings and add --strict
 
 psClean :: Task ()
 psClean =
@@ -64,13 +70,13 @@ tsInstall =
     ("ts-install", "")
     [dep tsClean ()]
     (pure ())
-    (\_ ctx -> sh ctx "yarn install")
+    (\_ ctx -> sh ctx "yarn install --pure-lockfile")
 
 nixDocs :: Task ()
 nixDocs =
   task
     ("nix-docs", "")
-    [dep tsInstall ()]
+    [dep generate (), dep tsInstall ()]
     (pure ())
     (\_ ctx -> sh ctx "yarn workspace docs build")
 
@@ -104,7 +110,7 @@ psTest =
     (pure ())
     ( \_ ctx -> do
         sh ctx "spago build --config tests.dhall"
-        sh ctx "nix-build -E '(import ./output/Test.Main/default.nix).main null"
+        sh ctx "nix-build -E '(import ./output/Test.Main/default.nix).main null'"
     )
 
 lockPkgs :: Task ()
@@ -119,7 +125,9 @@ bundle :: Task ()
 bundle =
   task
     ("bundle", "")
-    [dep tsInstall ()]
+    [ dep tsInstall (),
+      dep psBuild ()
+    ]
     (pure ())
     (\_ ctx -> sh ctx "yarn workspace bundle-nix ts-node src/index.ts")
 
@@ -131,13 +139,44 @@ materialize =
     (pure ())
     (\_ _ -> pure ())
 
+checkMaterialize :: Task ()
+checkMaterialize =
+  task
+    ("check-materialize", "")
+    [dep materialize (), dep checkStatus ()]
+    (pure ())
+    (\_ _ -> pure ())
+
 checkStatus :: Task ()
 checkStatus =
   task
     ("check-status", "")
     []
     (pure ())
-    (\_ ctx -> sh ctx "bash scripts/check-git-status.sh")
+    ( \_ ctx -> do
+        let gitSt = inshell "git status -s" ""
+        r <- strict gitSt
+        stdout ctx gitSt
+        when
+          (r /= "")
+          ( do
+              sh ctx "git diff"
+              exit $ ExitFailure 1
+          )
+    )
+
+taskGraph :: Task ()
+taskGraph =
+  task
+    ("task-graph", "")
+    []
+    (pure ())
+    ( \_ ctx -> do
+        getGraph allTasks
+          & (select . textToLines . fromString)
+          & inshell "dot -Tsvg"
+          & output (decodeString "materialized/task-deps.svg")
+    )
 
 generate :: Task ()
 generate =
@@ -150,6 +189,17 @@ generate =
         sh ctx "nix build .#docsJson -o generated/docs.json"
         sh ctx "nix build .#tsTypes -o generated/types.ts"
     )
+
+ci :: Task ()
+ci =
+  task
+    ("ci", "")
+    [ dep checkMaterialize (),
+      dep psBuild (),
+      dep dist ()
+    ]
+    (pure ())
+    (\_ ctx -> pure ())
 
 --------------------------------------------------------------------------------
 -- Main
@@ -168,8 +218,11 @@ allTasks =
     mk lockPkgs,
     mk bundle,
     mk materialize,
+    mk checkMaterialize,
     mk checkStatus,
-    mk generate
+    mk taskGraph,
+    mk generate,
+    mk ci
   ]
 
 main = do

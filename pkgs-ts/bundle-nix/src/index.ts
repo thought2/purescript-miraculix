@@ -13,7 +13,7 @@ type Source = string;
 type Registry = Record<Path, Source>;
 
 const loadRegistry = async (): Promise<Registry> => {
-  const moduleFiles = glob.sync("**/*.nix", { cwd: INPUT_DIR });
+  const moduleFiles = glob.sync("**/*.nix", { cwd: INPUT_DIR }).sort();
 
   let out: Registry = {};
 
