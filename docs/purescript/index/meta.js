@@ -1,1 +1,0 @@
-window.DocsSearchMeta = {"localPackageName":"purescript-miraculix-dev"}
