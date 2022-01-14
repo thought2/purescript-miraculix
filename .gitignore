@@ -12,3 +12,4 @@ result
 node_modules/
 /dist
 /generated
+/dist-newstyle

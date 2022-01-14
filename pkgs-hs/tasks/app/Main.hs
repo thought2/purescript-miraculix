@@ -1,23 +1,12 @@
-#!/usr/bin/env stack
-{- stack
-  --nix
-  --no-nix-pure
-  script
-  --resolver lts-18.21
-  --package turtle
-  --package optparse-applicative
-  --package process
-  --package text
-  --package chalk
-  --package dot
--}
-
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 
+module Main where
+
 import Data.String (fromString)
 import Data.Text (unpack)
+import GHC.IO.Encoding
 import OptTask
 import Options.Applicative
 import Turtle hiding (echo, sh, stdout, switch)
@@ -226,4 +215,5 @@ allTasks =
   ]
 
 main = do
+  setLocaleEncoding utf8
   runTasks allTasks

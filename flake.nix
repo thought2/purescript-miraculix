@@ -52,6 +52,7 @@
             pkgs.stack
             pkgs.gmp
             pkgs.zlib
+            pkgs.cabal-install
             easy-purescript-nix.spago2nix
             easy-purescript-nix.purty
             pkgs.purescript
