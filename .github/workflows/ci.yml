@@ -19,6 +19,9 @@ jobs:
       - name: Check shell
         run: nix develop --command echo 123
 
+      - name: Cabal update
+        run: nix develop --command cabal update
+
       - name: Check Tasks.hs
         run: nix develop --command ./run --help
 
