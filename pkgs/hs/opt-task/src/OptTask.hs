@@ -8,6 +8,8 @@ import Control.Exception.Base
 import Control.Monad (foldM)
 import Data.Foldable (fold, traverse_)
 import Data.Function ((&))
+import Data.Hashable (Hashable (hash))
+import Data.List (intercalate)
 import Data.String (IsString, fromString)
 import qualified Data.Text as Tx
 import Dot
@@ -44,6 +46,8 @@ data Stats = Stats {taskCount :: Int}
 
 type Handler = Ctx -> IO ()
 
+data Task' = forall a. Hashable a => Task' (Task a)
+
 data Task a = Task
   { taskName :: String,
     descr :: String,
@@ -55,11 +59,20 @@ data Task a = Task
 task :: (String, String) -> [Task ()] -> Parser a -> (a -> Handler) -> Task a
 task (taskName, descr) = Task taskName descr
 
+task_ :: (String, String) -> [Task ()] -> Handler -> Task ()
+task_ m d h = task m d (pure ()) (const h)
+
 dep :: Task a -> a -> Task ()
 dep (Task tn d deps _ mh) x = Task tn d deps (pure ()) (\_ -> mh x)
 
-mk :: Task a -> forall b. Task b
-mk t = unsafeCoerce t
+-- mk :: Task a -> forall b. Task b
+-- mk t = unsafeCoerce t
+
+mk :: Hashable a => Task a -> Task'
+mk t = Task' t
+
+unmk :: Task' -> Task a
+unmk (Task' t) = unsafeCoerce t
 
 scopeCtx :: Opts -> String -> Int -> Ctx -> Ctx
 scopeCtx o scope i (Ctx _ stdout proc_ sh sh' scope' _) =
@@ -74,27 +87,36 @@ scopeCtx o scope i (Ctx _ stdout proc_ sh sh' scope' _) =
   where
     shell c stdin = do
       T.liftIO $ putStrLn (C.bold ("ᐅ " <> Tx.unpack c))
-      (if _silent o then T.output (T.decodeString "/dev/null") else T.stdout) $ scopeLn . either id id <$> T.inshellWithErr c stdin
+      (if _silent o then T.output (T.decodeString "/dev/null") else T.stdout) $
+        scopeLn . either id id <$> T.inshellWithErr c stdin
 
     scopeLn x = colorWheel i (fromString scope <> ": ") <> x
 
-runTask :: Opts -> Stats -> Ctx -> Task a -> a -> IO ()
+type Cache = [Int]
+
+type State = (Int, Cache)
+
+runTask :: Hashable a => Opts -> Stats -> Ctx -> Task a -> a -> IO ()
 runTask o stats _ctx _t _x = do
-  go 0 _ctx _t _x
+  go (0, []) _ctx _t _x
   pure ()
   where
-    go :: Int -> Ctx -> Task a -> a -> IO Int
-    go idx ctx t x = do
-      r <-
-        if (_runDeps o)
-          then foldM (\i' t' -> go i' (scopeCtx o (taskName t) i' ctx) t' ()) idx (deps t)
-          else pure 0
-      putStrLn "--------------------------------------------------------------------------------------------------------------"
-      putStrLn (colorWheel r ("TASK " <> show (1 + r) <> "/" <> show (taskCount stats) <> ": " <> taskName t) <> C.gray (join $ (<>) " -> " <$> scope ctx))
-      putStrLn "--------------------------------------------------------------------------------------------------------------"
-      mkHandler t x (scopeCtx o (taskName t) r ctx) `catch` errorHandler
+    go :: Hashable a => State -> Ctx -> Task a -> a -> IO State
+    go st@(idx, ca) ctx t x = do
+      st'@(r, ca') <-
+        foldM
+          (\st'@(i', _) t' -> go st' (scopeCtx o (taskName t) i' ctx) t' ())
+          st
+          (if _runDeps o then deps t else [])
+
+      putStrLn $ printHeader st' stats ctx t
+
+      let h = hash (taskName t, x)
+      if elem h ca'
+        then putStrLn "<skipped>"
+        else mkHandler t x (scopeCtx o (taskName t) r ctx) `catch` errorHandler
       putStrLn ""
-      pure (r + 1)
+      pure (r + 1, h : ca')
 
     errorHandler :: ExitCode -> IO ()
     errorHandler ExitSuccess = pure ()
@@ -103,15 +125,27 @@ runTask o stats _ctx _t _x = do
       putStrLn $ C.red ("Task failed with exit code " <> show n)
       exit ec
 
-countTasks :: [Task a] -> Task a -> Int
-countTasks _ts t = foldl f 0 _ts
+printHeader :: State -> Stats -> Ctx -> Task a -> String
+printHeader (r, _) stats ctx t =
+  unlines
+    [ sepLine,
+      colorWheel r ("TASK " <> count <> ": " <> taskName t)
+        <> C.gray ((<>) " -> " =<< scope ctx),
+      sepLine
+    ]
   where
-    f :: Int -> Task a -> Int
-    f i t' | taskName t' == taskName t = go i t'
+    sepLine = "--------------------------------------------------------------------------------------------------------------"
+    count = show (1 + r) <> "/" <> show (taskCount stats)
+
+countTasks :: [Task'] -> Task' -> Int
+countTasks _ts (Task' t) = foldl f 0 _ts
+  where
+    f :: Int -> Task' -> Int
+    f i (Task' t') | taskName t' == taskName t = go i (Task' t')
     f i t' = i
 
-    go :: Int -> Task a -> Int
-    go i t = 1 + (foldl go i $ deps t)
+    go :: Int -> Task' -> Int
+    go i (Task' t) = 1 + (foldl go i $ mk <$> deps t)
 
 emptyCtx :: Ctx
 emptyCtx =
@@ -124,9 +158,9 @@ emptyCtx =
     []
     0
 
-runTasks :: [Task a] -> IO ()
+runTasks :: [Task'] -> IO ()
 runTasks ts = do
-  r <- execParser $ opts
+  r <- execParser opts
   matchCmd r ts
   where
     opts =
@@ -151,7 +185,7 @@ data Opts = Opts
     _task :: Cmd
   }
 
-mkParser :: [Task a] -> Parser Opts
+mkParser :: [Task'] -> Parser Opts
 mkParser ts =
   Opts
     <$> switch (long "deps" <> short 'd')
@@ -169,8 +203,8 @@ nativeCmd =
         (progDesc "show graph")
     )
 
-mkCommand :: Task a -> Mod CommandFields Cmd
-mkCommand t =
+mkCommand :: Task' -> Mod CommandFields Cmd
+mkCommand (Task' t) =
   command
     (taskName t)
     ( info
@@ -178,10 +212,10 @@ mkCommand t =
         (progDesc $ descr t)
     )
 
-getGraph :: [Task a] -> String
+getGraph :: [Task'] -> String
 getGraph ts = Tx.unpack $ D.encode $ getGraph' ts
 
-getGraph' :: [Task a] -> DotGraph
+getGraph' :: [Task'] -> DotGraph
 getGraph' ts =
   DotGraph
     Strict
@@ -191,7 +225,7 @@ getGraph' ts =
         <> (mkEdges =<< ts)
     )
   where
-    mkNode t =
+    mkNode (Task' t) =
       StatementNode $
         NodeStatement
           (fromString $ taskName t)
@@ -201,9 +235,9 @@ getGraph' ts =
             Attribute "shape" "box"
           ]
       where
-        isEntry = not $ any (\t' -> elem (taskName t) $ taskName <$> deps t') ts
+        isEntry = not $ any (\(Task' t') -> elem (taskName t) $ taskName <$> deps t') ts
 
-    mkEdge from to i =
+    mkEdge (Task' from) (Task' to) i =
       StatementEdge $
         EdgeStatement
           (ListTwo (fromString $ taskName from) (fromString $ taskName to) [])
@@ -211,16 +245,16 @@ getGraph' ts =
             Attribute "label" $ fromString $ show i
           ]
 
-    mkEdges t = zipWith (mkEdge t) (deps t) [1 ..]
+    mkEdges (Task' t) = zipWith (mkEdge $ Task' t) (Task' <$> deps t) [1 ..]
 
-matchCmd :: Opts -> [Task a] -> IO ()
+matchCmd :: Opts -> [Task'] -> IO ()
 matchCmd opts@(Opts rd _ (Left nc)) ts = putStrLn $ getGraph ts
 matchCmd opts@(Opts rd _ (Right (UserCmd n o))) ts = do
   traverse_
-    ( \t ->
+    ( \tt@(Task' t) ->
         if taskName t == n
           then do
-            let stats = Stats $ countTasks ts t
+            let stats = Stats $ countTasks ts tt
             runTask opts stats emptyCtx t o
           else pure ()
     )

@@ -18,182 +18,167 @@ import qualified Turtle as T
 
 psBuild :: Task ()
 psBuild =
-  task
+  task_
     ("ps-build", "Build the PureScript project")
     [ dep psClean (),
       dep psTest ()
     ]
-    (pure ())
-    ( \_ ctx -> do
-        echo ctx "Hello, build!"
-        sh ctx "spago build --purs-args '--censor-lib' --config lib.dhall"
-    ) -- TODO: fix warnings and add --strict
+    $ \ctx -> do
+      echo ctx "Hello, build!"
+      sh ctx "spago build --purs-args '--censor-lib' --config lib.dhall"
+
+-- TODO: fix warnings and add --strict
 
 psClean :: Task ()
 psClean =
-  task
+  task_
     ("ps-clean", "")
     []
-    (pure ())
-    (\_ ctx -> sh ctx "rm -rf output .spago")
+    $ \ctx -> sh ctx "rm -rf output .spago"
 
 psDocs :: Task ()
 psDocs =
-  task
+  task_
     ("ps-docs", "")
     [dep psClean ()]
-    (pure ())
-    (\_ ctx -> sh ctx "spago docs")
+    $ \ctx -> sh ctx "spago docs"
 
 tsClean :: Task ()
 tsClean =
-  task
+  task_
     ("ts-clean", "")
     []
-    (pure ())
-    (\_ ctx -> sh ctx "rm -rf node_modules pkgs-ts/*/node_modules")
+    $ \ctx -> sh ctx "rm -rf node_modules pkgs-ts/*/node_modules"
 
 tsInstall :: Task ()
 tsInstall =
-  task
+  task_
     ("ts-install", "")
     [dep tsClean ()]
-    (pure ())
-    (\_ ctx -> sh ctx "yarn install --pure-lockfile")
+    $ \ctx -> sh ctx "yarn install --pure-lockfile"
 
 nixDocs :: Task ()
 nixDocs =
-  task
+  task_
     ("nix-docs", "")
     [dep generate (), dep tsInstall ()]
-    (pure ())
-    (\_ ctx -> sh ctx "yarn workspace docs build")
+    $ \ctx -> sh ctx "yarn workspace docs build"
 
 dist :: Task ()
 dist =
-  task
+  task_
     ("dist", "")
     [dep nixDocs (), dep psDocs ()]
-    (pure ())
-    ( \_ ctx -> do
-        sh ctx "rm -rf dist"
-        sh ctx "mkdir -p dist/docs/purescript"
-        sh ctx "cp -r generated-docs/html/** -t dist/docs/purescript"
-        sh ctx "mkdir -p dist/docs/nix"
-        sh ctx "cp -r pkgs-ts/docs/public/** -t dist/docs/nix"
-    )
+    $ \ctx -> do
+      sh ctx "rm -rf dist"
+      sh ctx "mkdir -p dist/docs/purescript"
+      sh ctx "cp -r generated-docs/html/** -t dist/docs/purescript"
+      sh ctx "mkdir -p dist/docs/nix"
+      sh ctx "cp -r pkgs-ts/docs/public/** -t dist/docs/nix"
 
 runNixExample :: Task ()
 runNixExample =
-  task
+  task_
     ("run-nix-example", "")
     []
-    (pure ())
-    (\_ ctx -> sh ctx "nix-build nix-example/test.nix")
+    $ \ctx -> sh ctx "nix-build nix-example/test.nix"
 
 psTest :: Task ()
 psTest =
-  task
+  task_
     ("ps-test", "")
     [dep psClean ()]
-    (pure ())
-    ( \_ ctx -> do
-        sh ctx "spago build --config tests.dhall"
-        sh ctx "nix-build -E '(import ./output/Test.Main/default.nix).main null'"
-    )
+    $ \ctx -> do
+      sh ctx "spago build --config tests.dhall"
+      sh ctx "nix-build -E '(import ./output/Test.Main/default.nix).main null'"
 
 lockPkgs :: Task ()
 lockPkgs =
-  task
+  task_
     ("lock-pkgs", "")
     [dep tsInstall ()]
-    (pure ())
-    (\_ ctx -> sh ctx "yarn workspace lock-pkgs ts-node src/index.ts")
+    $ \ctx -> sh ctx "yarn workspace lock-pkgs ts-node src/index.ts"
 
 bundle :: Task ()
 bundle =
-  task
+  task_
     ("bundle", "")
     [ dep tsInstall (),
       dep psBuild ()
     ]
-    (pure ())
-    (\_ ctx -> sh ctx "yarn workspace bundle-nix ts-node src/index.ts")
+    $ \ctx -> sh ctx "yarn workspace bundle-nix ts-node src/index.ts"
 
 materialize :: Task ()
 materialize =
-  task
+  task_
     ("materialize", "")
     [dep bundle ()]
-    (pure ())
-    (\_ _ -> pure ())
+    $ \_ -> pure ()
 
 checkMaterialize :: Task ()
 checkMaterialize =
-  task
+  task_
     ("check-materialize", "")
     [dep materialize (), dep checkStatus ()]
-    (pure ())
-    (\_ _ -> pure ())
+    $ \_ -> pure ()
 
 checkStatus :: Task ()
 checkStatus =
-  task
+  task_
     ("check-status", "")
     []
-    (pure ())
-    ( \_ ctx -> do
-        let gitSt = inshell "git status -s" ""
-        r <- strict gitSt
-        stdout ctx gitSt
-        when
-          (r /= "")
-          ( do
-              sh ctx "git diff"
-              exit $ ExitFailure 1
-          )
-    )
+    $ \ctx -> do
+      let gitSt = inshell "git status -s" ""
+      r <- strict gitSt
+      stdout ctx gitSt
+      when
+        (r /= "")
+        (exit $ ExitFailure 1)
 
 taskGraph :: Task ()
 taskGraph =
-  task
+  task_
     ("task-graph", "")
     []
-    (pure ())
-    ( \_ ctx -> do
-        getGraph allTasks
-          & (select . textToLines . fromString)
-          & inshell "dot -Tsvg"
-          & output (decodeString "materialized/task-deps.svg")
-    )
+    $ \ctx -> do
+      getGraph allTasks
+        & (select . textToLines . fromString)
+        & inshell "dot -Tsvg"
+        & output (decodeString "materialized/task-deps.svg")
 
 generate :: Task ()
 generate =
-  task
+  task_
     ("generate", "")
     []
-    (pure ())
-    ( \_ ctx -> do
-        sh ctx "rm -rf generated"
-        sh ctx "nix build .#docsJson -o generated/docs.json"
-        sh ctx "nix build .#tsTypes -o generated/types.ts"
-    )
+    $ \ctx -> do
+      sh ctx "rm -rf generated"
+      sh ctx "nix build .#docsJson -o generated/docs.json"
+      sh ctx "nix build .#tsTypes -o generated/types.ts"
+
+tsDocsDevelop :: Task ()
+tsDocsDevelop =
+  task_
+    ("ts-docs-develop", "")
+    []
+    $ \ctx -> do
+      sh ctx "yarn workspace docs develop"
 
 ci :: Task ()
 ci =
-  task
+  task_
     ("ci", "")
     [ dep checkMaterialize (),
       dep psBuild (),
       dep dist ()
     ]
-    (pure ())
-    (\_ ctx -> pure ())
+    $ \ctx -> pure ()
 
 --------------------------------------------------------------------------------
 -- Main
 --------------------------------------------------------------------------------
 
+allTasks :: [Task']
 allTasks =
   [ mk psBuild,
     mk psClean,
@@ -211,9 +196,11 @@ allTasks =
     mk checkStatus,
     mk taskGraph,
     mk generate,
+    mk tsDocsDevelop,
     mk ci
   ]
 
+main :: IO ()
 main = do
   setLocaleEncoding utf8
   runTasks allTasks

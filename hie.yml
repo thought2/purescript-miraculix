@@ -1,0 +1,7 @@
+cradle:
+  cabal:
+    - path: "pkgs/hs/opt-task/src"
+      component: "lib:opt-task"
+
+    - path: "pkgs/hs/tasks/app/Main.hs"
+      component: "tasks:exe:tasks"

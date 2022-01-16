@@ -1,5 +1,5 @@
 import * as React from "react";
-import * as data from "../../../../generated/docs.json";
+import * as data from "../../../../../generated/docs.json";
 
 const IndexPage = () => {
   return (

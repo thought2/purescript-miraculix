@@ -1,3 +1,6 @@
 packages:
-  pkgs-hs/opt-task/
-  pkgs-hs/tasks/
+  pkgs/hs/opt-task/
+  pkgs/hs/tasks/
+
+
+write-ghc-environment-files: never

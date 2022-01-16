@@ -49,7 +49,8 @@
         devShell = pkgs.mkShell {
           nativeBuildInputs = [
             pkgs.purenix
-            pkgs.stack
+            pkgs.haskellPackages.cabal-fmt
+            pkgs.ghc
             pkgs.gmp
             pkgs.zlib
             pkgs.cabal-install

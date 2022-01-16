@@ -1,5 +1,5 @@
 cabal-version:      2.4
-name:               tasks
+name:               opt-task
 version:            0.1.0.0
 
 -- A short (one-line) description of the package.
@@ -21,19 +21,23 @@ maintainer:         me@thought2.de
 -- category:
 extra-source-files: CHANGELOG.md
 
-executable tasks
-    main-is:          Main.hs
+library
+  exposed-modules:  OptTask
 
-    -- Modules included in this executable, other than Main.
-    -- other-modules:
+  -- Modules included in this library but not exported.
+  -- other-modules:
 
-    -- LANGUAGE extensions used by modules in this package.
-    -- other-extensions:
-    build-depends:
-       , base
-       , opt-task
-       , turtle
-       , optparse-applicative
-       , text
-    hs-source-dirs:   app
-    default-language: Haskell2010
+  -- LANGUAGE extensions used by modules in this package.
+  -- other-extensions:
+  build-depends:
+    , base
+    , chalk
+    , dot
+    , hashable
+    , optparse-applicative
+    , process
+    , text
+    , turtle
+
+  hs-source-dirs:   src
+  default-language: Haskell2010

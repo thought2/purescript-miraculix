@@ -1,10 +1,9 @@
 {
   "private": true,
   "workspaces": [
-    "pkgs-ts/*",
-    "tasks"
+    "pkgs/ts/*"
   ],
   "scripts": {
-    "go": "ts-node run.ts"
+    "go": "cabal run tasks --  $@"
   }
 }
