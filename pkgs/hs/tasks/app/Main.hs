@@ -83,7 +83,7 @@ dist =
       sh "mkdir -p dist/docs/purescript"
       sh "cp -r generated-docs/html/** -t dist/docs/purescript"
       sh "mkdir -p dist/docs/nix"
-      sh "cp -r pkgs-ts/docs/public/** -t dist/docs/nix"
+      sh "cp -r pkgs/ts/docs/public/** -t dist/docs/nix"
 
 runNixExample :: Task ()
 runNixExample =

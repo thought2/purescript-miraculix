@@ -18,7 +18,7 @@ import qualified System.Console.Chalk as C
 import qualified System.Environment as E
 import qualified System.IO as I
 import qualified System.Process as S
-import Turtle hiding (elem, fold, switch)
+import Turtle hiding (elem, fold, option, switch)
 import qualified Turtle as T
 import Unsafe.Coerce (unsafeCoerce)
 
@@ -34,8 +34,8 @@ type Cmd = Either NativeCmd UserCmd
 data Opts = Opts
   { _runDeps :: Bool,
     _silent :: Bool,
-    _task :: Cmd,
-    _omit :: [String]
+    _omit :: [String],
+    _task :: Cmd
   }
 
 data Task' = forall a. Hashable a => Task' (Task a)
@@ -63,10 +63,10 @@ type Handler = Ctx -> IO ()
 mkParser :: [Task'] -> Parser Opts
 mkParser ts =
   Opts
-    <$> switch (long "deps" <> short 'd')
+    <$> switch (long "deps" <> short 'd' <> help "Run dependency tasks")
     <*> switch (long "silent" <> short 's')
+    <*> (many $ strOption (long "omit" <> short 'o' <> help "Omit some tasks"))
     <*> (subparser (fold [nativeCmd]) <|> subparser (fold parseUserCmds))
-    <*> pure []
   where
     parseUserCmds = mkCommand <$> ts
 

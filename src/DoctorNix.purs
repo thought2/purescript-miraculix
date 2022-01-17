@@ -95,6 +95,8 @@ derive instance ntNixDefDoc :: Newtype NixDefDoc _
 instance toTsTypeNixDefDoc :: ToTsType NixDefDoc where
   toTsType _ = Id "NixDefDoc"
 
+derive instance ntNixTypeDoc :: Newtype NixTypeDoc _
+
 type NixDocs
   = { title :: String
     , types :: Array NixTypeDoc

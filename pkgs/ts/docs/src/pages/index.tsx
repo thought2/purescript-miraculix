@@ -1,10 +1,15 @@
 import * as React from "react";
 import * as data_ from "../../../../../generated/docs.json";
-import { Docs } from "../../../../../generated/types";
+import { NixDocs, NixDefDoc } from "../../../../../generated/types";
 
-const data = data_ as unknown as Docs;
+const data = data_ as unknown as NixDocs;
 
-const Def = ({ def }: { def: any }) => <div>Def</div>;
+const Def = ({ def }: { def: NixDefDoc }) => <div>{def.name}</div>;
+
+type T1<A> = {
+  __field0: A;
+  __tag: string;
+};
 
 const IndexPage = () => {
   return (

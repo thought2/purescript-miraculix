@@ -9,7 +9,7 @@ _tasks()
         CMDLINE=(${CMDLINE[@]} --bash-completion-word $arg)
     done
 
-    COMPREPLY=( $( ./tasks "${CMDLINE[@]}") )
+    COMPREPLY=( $( ./bin/tasks "${CMDLINE[@]}") )
 }
 
 complete -o filenames -F _tasks tasks

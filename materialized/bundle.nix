@@ -19066,11 +19066,12 @@ let
         in
           module."Data.Array".fold module."Data.Monoid".monoidString [(module."Data.Semigroup".append module."Data.Semigroup".semigroupString "# " title)
           ""];
-      __patternFail = builtins.throw "Pattern match failure in src/DoctorNix.purs at 104:1 - 104:28";
+      __patternFail = builtins.throw "Pattern match failure in src/DoctorNix.purs at 106:1 - 106:28";
     in
       __pattern0 __patternFail;
   path = {toNixType = v: Path;};
   number = {toNixType = v: Float;};
+  ntNixTypeDoc = {"Coercible0" = __unused: module."Prim".undefined;};
   ntNixDefDoc = {"Coercible0" = __unused: module."Prim".undefined;};
   nixType = {toNixType = x: x;};
   int = {toNixType = v: Int;};
@@ -19221,7 +19222,7 @@ let
   attrs' = dictToNixType: {toNixType = v: Attrs' (toNixType' dictToNixType module."Type.Proxy".Proxy);};
   array = dictToNixType: {toNixType = v: List (toNixType' dictToNixType module."Type.Proxy".Proxy);};
 in
-  {inherit foo toNixType Attrs Bool Path Float Function Int List Null String Opaque Any TypeVar Attrs' Attrs'' toNixType' NixTypeDoc NixDefDoc render gen toTsType record boolean path number function int array unit string foreign' attrs'' attrs' nixType toTsTypeNixTypeDoc ntNixDefDoc toTsTypeNixDefDoc;}
+  {inherit foo toNixType Attrs Bool Path Float Function Int List Null String Opaque Any TypeVar Attrs' Attrs'' toNixType' NixTypeDoc NixDefDoc render gen toTsType record boolean path number function int array unit string foreign' attrs'' attrs' nixType toTsTypeNixTypeDoc ntNixDefDoc toTsTypeNixDefDoc ntNixTypeDoc;}
 ;
 
 Effect_default-nix = 
@@ -32148,7 +32149,8 @@ let
   foreign = Test-Miraculix-Nix-Docs_foreign-nix;
   toJSON = foreign.toJSON;
   tsTypes = module."Data.Function".apply (module."TS".render module."TS".renderTsDoc) [(module."TS".Type "NixDocs" (module."TS".toTsType (module."TS".record module."Prim".undefined (module."TS".toTsTypeRLCons (module."TS".toTsTypeRLCons (module."TS".toTsTypeRLCons module."TS".toTsTypeRLNil (module."TS".array module."DoctorNix".toTsTypeNixTypeDoc) {reflectSymbol = __unused: "types";}) module."TS".string {reflectSymbol = __unused: "title";}) (module."TS".array module."DoctorNix".toTsTypeNixDefDoc) {reflectSymbol = __unused: "defs";})) module."Type.Proxy".Proxy) true)
-    (module."TS".Type "NixDefDoc" (module."TS".toTsType (module."TS".record module."Prim".undefined (module."TS".toTsTypeRLCons (module."TS".toTsTypeRLCons (module."TS".toTsTypeRLCons module."TS".toTsTypeRLNil module."DoctorNix".toTsType {reflectSymbol = __unused: "type_";}) module."TS".string {reflectSymbol = __unused: "name";}) module."TS".string {reflectSymbol = __unused: "descr";})) ((dictNewtype: module."Type.Proxy".Proxy) module."Prim".undefined)) true)];
+    (module."TS".Type "NixDefDoc" (module."TS".toTsType (module."TS".record module."Prim".undefined (module."TS".toTsTypeRLCons (module."TS".toTsTypeRLCons (module."TS".toTsTypeRLCons module."TS".toTsTypeRLNil module."DoctorNix".toTsType {reflectSymbol = __unused: "type_";}) module."TS".string {reflectSymbol = __unused: "name";}) module."TS".string {reflectSymbol = __unused: "descr";})) ((dictNewtype: module."Type.Proxy".Proxy) module."Prim".undefined)) true)
+    (module."TS".Type "NixTypeDoc" (module."TS".toTsType (module."TS".record module."Prim".undefined (module."TS".toTsTypeRLCons (module."TS".toTsTypeRLCons (module."TS".toTsTypeRLCons module."TS".toTsTypeRLNil module."DoctorNix".toTsType {reflectSymbol = __unused: "type_";}) module."TS".string {reflectSymbol = __unused: "name";}) module."TS".string {reflectSymbol = __unused: "descr";})) ((dictNewtype: module."Type.Proxy".Proxy) module."Prim".undefined)) true)];
   docs = 
     { title = "miraculix";
       types = 

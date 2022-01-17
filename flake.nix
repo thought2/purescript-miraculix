@@ -47,6 +47,14 @@
 
 
         devShell = pkgs.mkShell {
+          shellHook = ''
+            . init-completion.sh
+            PATH=./bin:$PATH
+            PS1="N $PS1"
+
+            rm -rf .git/hooks/*
+            cp -r git-hooks/* -t .git/hooks
+          '';
           nativeBuildInputs = with pkgs; [
             haskellPackages.graphmod
             xdot

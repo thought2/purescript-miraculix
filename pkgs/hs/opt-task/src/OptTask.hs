@@ -1,4 +1,5 @@
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -78,7 +79,7 @@ type Cache = [Int]
 type State = (Int, Cache)
 
 runTask :: Hashable a => Opts -> Stats -> Ctx -> Task a -> a -> IO ()
-runTask o stats _ctx _t _x = do
+runTask o@Opts {_omit} stats _ctx _t _x = do
   go (0, []) _ctx _t _x
   pure ()
   where
@@ -93,7 +94,7 @@ runTask o stats _ctx _t _x = do
       putStrLn $ printHeader st' stats ctx t
 
       let h = hash (taskName t, x)
-      if elem h ca'
+      if elem (taskName t) _omit || elem h ca'
         then putStrLn "<skipped>"
         else mkHandler t x (scopeCtx o (taskName t) r ctx) `catch` errorHandler
       putStrLn ""

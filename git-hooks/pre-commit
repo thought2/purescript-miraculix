@@ -1,0 +1,16 @@
+
+  
+#!/usr/bin/env bash
+
+# TODO: handle case when nothing is staged
+
+git commit --no-verify -m"dry-run"
+
+TMP=$(mktemp -d)
+git clone . $TMP
+
+git reset --soft HEAD~1
+
+cd $TMP
+
+tasks ci
