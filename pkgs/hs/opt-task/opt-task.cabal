@@ -22,10 +22,12 @@ maintainer:         me@thought2.de
 extra-source-files: CHANGELOG.md
 
 library
-  exposed-modules:  OptTask
+  exposed-modules:
+    OptTask
+    OptTask.Opts
 
   -- Modules included in this library but not exported.
-  -- other-modules:
+  -- other-modules:    OptTask.Opts
 
   -- LANGUAGE extensions used by modules in this package.
   -- other-extensions:

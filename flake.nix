@@ -47,20 +47,23 @@
 
 
         devShell = pkgs.mkShell {
-          nativeBuildInputs = [
-            pkgs.purenix
-            pkgs.haskellPackages.cabal-fmt
-            pkgs.ghc
-            pkgs.gmp
-            pkgs.zlib
-            pkgs.cabal-install
+          nativeBuildInputs = with pkgs; [
+            haskellPackages.graphmod
+            xdot
+            ghcid
+            purenix
+            haskellPackages.cabal-fmt
+            ghc
+            gmp
+            zlib
+            cabal-install
             easy-purescript-nix.spago2nix
             easy-purescript-nix.purty
-            pkgs.purescript
-            pkgs.spago
-            pkgs.nodePackages.purescript-psa
-            pkgs.dhall-json
-            pkgs.nix-prefetch-git
+            purescript
+            spago
+            nodePackages.purescript-psa
+            dhall-json
+            nix-prefetch-git
           ];
         };
       }

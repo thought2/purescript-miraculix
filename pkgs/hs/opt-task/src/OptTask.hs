@@ -1,6 +1,7 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecordWildCards #-}
 
 module OptTask where
 
@@ -14,6 +15,8 @@ import Data.String (IsString, fromString)
 import qualified Data.Text as Tx
 import Dot
 import qualified Dot as D
+import OptTask.Opts
+import OptTask.Opts as Exp
 import Options.Applicative
 import qualified System.Console.Chalk as C
 import qualified System.Environment as E
@@ -32,29 +35,7 @@ colorWheel i = C.cyan -- colors !! (i `mod` length colors)
   where
     colors = [C.blue, C.magenta, C.cyan, C.yellow]
 
-data Ctx = Ctx
-  { echo :: T.Line -> IO (),
-    stdout :: forall io. T.MonadIO io => T.Shell T.Line -> io (),
-    proc :: forall io. T.MonadIO io => T.Text -> [T.Text] -> T.Shell T.Line -> io T.ExitCode,
-    sh :: forall io. T.MonadIO io => T.Text -> io (),
-    sh' :: forall io. T.MonadIO io => T.Text -> Shell T.Line -> io (),
-    scope :: [String],
-    i :: Int
-  }
-
 data Stats = Stats {taskCount :: Int}
-
-type Handler = Ctx -> IO ()
-
-data Task' = forall a. Hashable a => Task' (Task a)
-
-data Task a = Task
-  { taskName :: String,
-    descr :: String,
-    deps :: [Task ()],
-    parser :: Parser a,
-    mkHandler :: a -> Handler
-  }
 
 task :: (String, String) -> [Task ()] -> Parser a -> (a -> Handler) -> Task a
 task (taskName, descr) = Task taskName descr
@@ -170,48 +151,6 @@ runTasks ts = do
             <> progDesc "Print a greeting for TARGET"
         )
 
-data NativeCmd = NativeCmd
-
-data UserCmd = UserCmd
-  { name :: String,
-    opts :: forall a. a
-  }
-
-type Cmd = Either NativeCmd UserCmd
-
-data Opts = Opts
-  { _runDeps :: Bool,
-    _silent :: Bool,
-    _task :: Cmd
-  }
-
-mkParser :: [Task'] -> Parser Opts
-mkParser ts =
-  Opts
-    <$> switch (long "deps" <> short 'd')
-    <*> switch (long "silent" <> short 's')
-    <*> subparser (fold ([nativeCmd] <> parseUserCmds))
-  where
-    parseUserCmds = mkCommand <$> ts
-
-nativeCmd :: Mod CommandFields Cmd
-nativeCmd =
-  command
-    "_graph"
-    ( info
-        (pure $ Left NativeCmd)
-        (progDesc "show graph")
-    )
-
-mkCommand :: Task' -> Mod CommandFields Cmd
-mkCommand (Task' t) =
-  command
-    (taskName t)
-    ( info
-        ((\x -> Right $ UserCmd (taskName t) $ unsafeCoerce x) <$> parser t)
-        (progDesc $ descr t)
-    )
-
 getGraph :: [Task'] -> String
 getGraph ts = Tx.unpack $ D.encode $ getGraph' ts
 
@@ -248,8 +187,8 @@ getGraph' ts =
     mkEdges (Task' t) = zipWith (mkEdge $ Task' t) (Task' <$> deps t) [1 ..]
 
 matchCmd :: Opts -> [Task'] -> IO ()
-matchCmd opts@(Opts rd _ (Left nc)) ts = putStrLn $ getGraph ts
-matchCmd opts@(Opts rd _ (Right (UserCmd n o))) ts = do
+matchCmd opts@Opts {_task = Left _} ts = putStrLn $ getGraph ts
+matchCmd opts@Opts {_task = Right (UserCmd n o)} ts = do
   traverse_
     ( \tt@(Task' t) ->
         if taskName t == n

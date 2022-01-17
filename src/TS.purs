@@ -28,12 +28,13 @@ data TsType
   | Object TsType
   | Record (Array (String /\ TsType))
   | Function (Array TsType)
+  | Id String
 
 --------------------------------------------------------------------------------
 -- data TsTypeDecl
 --------------------------------------------------------------------------------
 data TsTypeDecl
-  = Type String TsType
+  = Type String TsType Boolean
 
 --------------------------------------------------------------------------------
 -- data TsTypeDecl
@@ -131,7 +132,12 @@ instance renderTsDoc :: Render TsDoc where
 
 instance renderTsTypeDecl :: Render TsTypeDecl where
   render = case _ of
-    Type name t -> "type " <> name <> " = " <> render t
+    Type name t exp ->
+      (if exp then "export " else "")
+        <> "type "
+        <> name
+        <> " = "
+        <> render t
 
 instance renderTsType :: Render TsType where
   render = case _ of
@@ -149,5 +155,6 @@ instance renderTsType :: Render TsType where
     Object t -> "Record<string, " <> render t <> ">"
     Record xs -> "{" <> (fold $ renderKeyVal <$> xs) <> "}"
     Function _ -> "<todo>"
+    Id id -> id
     where
     renderKeyVal (k /\ v) = k <> ":" <> render v <> ";"

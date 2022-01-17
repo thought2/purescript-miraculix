@@ -18989,6 +18989,7 @@ let
     { "Data.Array" = Data-Array_default-nix;
       "Data.Generic.Rep" = Data-Generic-Rep_default-nix;
       "Data.Monoid" = Data-Monoid_default-nix;
+      "Data.Newtype" = Data-Newtype_default-nix;
       "Data.Semigroup" = Data-Semigroup_default-nix;
       "Data.Symbol" = Data-Symbol_default-nix;
       "Data.Tuple.Nested" = Data-Tuple-Nested_default-nix;
@@ -19036,9 +19037,13 @@ let
       __field0 = value0;
     };
   Attrs'' = {__tag = "Attrs''";};
+  NixTypeDoc = x: x;
   ToNixType-Dict = x: x;
+  NixDefDoc = x: x;
   Foo-Dict = x: x;
   unit = {toNixType = v: Null;};
+  toTsTypeNixTypeDoc = {toTsType = v: module."TS".Id "NixTypeDoc";};
+  toTsTypeNixDefDoc = {toTsType = v: module."TS".Id "NixDefDoc";};
   toNixType = dict: 
     let
       __pattern0 = __fail: 
@@ -19046,7 +19051,7 @@ let
           v = dict;
         in
           v.toNixType;
-      __patternFail = builtins.throw "Pattern match failure in src/DoctorNix.purs at 37:3 - 37:28";
+      __patternFail = builtins.throw "Pattern match failure in src/DoctorNix.purs at 38:3 - 38:28";
     in
       __pattern0 __patternFail;
   toNixType' = dictToNixType: v: toNixType dictToNixType (module."Unsafe.Coerce".unsafeCoerce module."Data.Unit".unit);
@@ -19061,11 +19066,12 @@ let
         in
           module."Data.Array".fold module."Data.Monoid".monoidString [(module."Data.Semigroup".append module."Data.Semigroup".semigroupString "# " title)
           ""];
-      __patternFail = builtins.throw "Pattern match failure in src/DoctorNix.purs at 89:1 - 89:28";
+      __patternFail = builtins.throw "Pattern match failure in src/DoctorNix.purs at 104:1 - 104:28";
     in
       __pattern0 __patternFail;
   path = {toNixType = v: Path;};
   number = {toNixType = v: Float;};
+  ntNixDefDoc = {"Coercible0" = __unused: module."Prim".undefined;};
   nixType = {toNixType = x: x;};
   int = {toNixType = v: Int;};
   gen = 
@@ -19129,7 +19135,7 @@ let
                   Attrs' arg
               else __fail;
           __pattern13 = __fail: if x.__tag == "Inr" && x.__field0.__tag == "Inr" && x.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" && x.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__field0.__tag == "Inr" then Attrs'' else __fail;
-          __patternFail = builtins.throw "Pattern match failure in src/DoctorNix.purs at 31:1 - 31:41";
+          __patternFail = builtins.throw "Pattern match failure in src/DoctorNix.purs at 32:1 - 32:41";
         in
           __pattern0 (__pattern1 (__pattern2 (__pattern3 (__pattern4 (__pattern5 (__pattern6 (__pattern7 (__pattern8 (__pattern9 (__pattern10 (__pattern11 (__pattern12 (__pattern13 __patternFail)))))))))))));
       from = x: 
@@ -19192,7 +19198,7 @@ let
                   module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inl arg))))))))))))
               else __fail;
           __pattern13 = __fail: if x.__tag == "Attrs''" then module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr (module."Data.Generic.Rep".Inr module."Data.Generic.Rep".NoArguments)))))))))))) else __fail;
-          __patternFail = builtins.throw "Pattern match failure in src/DoctorNix.purs at 31:1 - 31:41";
+          __patternFail = builtins.throw "Pattern match failure in src/DoctorNix.purs at 32:1 - 32:41";
         in
           __pattern0 (__pattern1 (__pattern2 (__pattern3 (__pattern4 (__pattern5 (__pattern6 (__pattern7 (__pattern8 (__pattern9 (__pattern10 (__pattern11 (__pattern12 (__pattern13 __patternFail)))))))))))));
     };
@@ -19206,7 +19212,7 @@ let
           v = dict;
         in
           v.foo;
-      __patternFail = builtins.throw "Pattern match failure in src/DoctorNix.purs at 43:3 - 43:29";
+      __patternFail = builtins.throw "Pattern match failure in src/DoctorNix.purs at 44:3 - 44:29";
     in
       __pattern0 __patternFail;
   record = dictRowToList: dictFoo: {toNixType = v: foo dictFoo module."Type.Proxy".Proxy;};
@@ -19215,7 +19221,7 @@ let
   attrs' = dictToNixType: {toNixType = v: Attrs' (toNixType' dictToNixType module."Type.Proxy".Proxy);};
   array = dictToNixType: {toNixType = v: List (toNixType' dictToNixType module."Type.Proxy".Proxy);};
 in
-  {inherit foo toNixType Attrs Bool Path Float Function Int List Null String Opaque Any TypeVar Attrs' Attrs'' toNixType' render gen toTsType record boolean path number function int array unit string foreign' attrs'' attrs' nixType;}
+  {inherit foo toNixType Attrs Bool Path Float Function Int List Null String Opaque Any TypeVar Attrs' Attrs'' toNixType' NixTypeDoc NixDefDoc render gen toTsType record boolean path number function int array unit string foreign' attrs'' attrs' nixType toTsTypeNixTypeDoc ntNixDefDoc toTsTypeNixDefDoc;}
 ;
 
 Effect_default-nix = 
@@ -31826,10 +31832,15 @@ let
     { __tag = "Function";
       __field0 = value0;
     };
-  Type = value0: value1: 
+  Id = value0: 
+    { __tag = "Id";
+      __field0 = value0;
+    };
+  Type = value0: value1: value2: 
     { __tag = "Type";
       __field0 = value0;
       __field1 = value1;
+      __field2 = value2;
     };
   TsDoc = x: x;
   ToTsTypeRL-Dict = x: x;
@@ -31844,7 +31855,7 @@ let
           v = dict;
         in
           v.toTsTypeRl;
-      __patternFail = builtins.throw "Pattern match failure in src/TS.purs at 110:3 - 110:53";
+      __patternFail = builtins.throw "Pattern match failure in src/TS.purs at 111:3 - 111:53";
     in
       __pattern0 __patternFail;
   toTsTypeRLNil = {toTsTypeRl = v: [];};
@@ -31855,7 +31866,7 @@ let
           v = dict;
         in
           v.toTsType;
-      __patternFail = builtins.throw "Pattern match failure in src/TS.purs at 48:3 - 48:32";
+      __patternFail = builtins.throw "Pattern match failure in src/TS.purs at 49:3 - 49:32";
     in
       __pattern0 __patternFail;
   toTsTypeRLCons = dictToTsTypeRL: dictToTsType: dictIsSymbol: {toTsTypeRl = v: module."Data.Semigroup".append module."Data.Semigroup".semigroupArray [(module."Data.Tuple".Tuple (module."Data.Symbol".reflectSymbol dictIsSymbol module."Type.Proxy".Proxy) (toTsType dictToTsType module."Type.Proxy".Proxy))] (toTsTypeRl dictToTsTypeRL module."Type.Proxy".Proxy);};
@@ -31868,7 +31879,7 @@ let
           v = dict;
         in
           v.render;
-      __patternFail = builtins.throw "Pattern match failure in src/TS.purs at 126:3 - 126:24";
+      __patternFail = builtins.throw "Pattern match failure in src/TS.purs at 127:3 - 127:24";
     in
       __pattern0 __patternFail;
   renderTsType = 
@@ -31885,7 +31896,7 @@ let
                     in
                       module."Data.Semigroup".append module."Data.Semigroup".semigroupString k (module."Data.Semigroup".append module."Data.Semigroup".semigroupString ":" (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (render renderTsType v1) ";"))
                   else __fail;
-              __patternFail = builtins.throw "Pattern match failure in src/TS.purs at 153:5 - 153:56";
+              __patternFail = builtins.throw "Pattern match failure in src/TS.purs at 160:5 - 160:56";
             in
               __pattern0 __patternFail;
         in
@@ -31933,9 +31944,17 @@ let
                     module."Data.Semigroup".append module."Data.Semigroup".semigroupString "{" (module."Data.Semigroup".append module."Data.Semigroup".semigroupString (module."Data.Function".apply (module."Data.Array".fold module."Data.Monoid".monoidString) (module."Data.Functor".map module."Data.Functor".functorArray renderKeyVal xs)) "}")
                 else __fail;
             __pattern13 = __fail: if v.__tag == "Function" then "<todo>" else __fail;
-            __patternFail = builtins.throw "Pattern match failure in src/TS.purs at 137:12 - 151:27";
+            __pattern14 = __fail: 
+              if v.__tag == "Id"
+                then 
+                  let
+                    id = v.__field0;
+                  in
+                    id
+                else __fail;
+            __patternFail = builtins.throw "Pattern match failure in src/TS.purs at 143:12 - 158:16";
           in
-            __pattern0 (__pattern1 (__pattern2 (__pattern3 (__pattern4 (__pattern5 (__pattern6 (__pattern7 (__pattern8 (__pattern9 (__pattern10 (__pattern11 (__pattern12 (__pattern13 __patternFail)))))))))))));
+            __pattern0 (__pattern1 (__pattern2 (__pattern3 (__pattern4 (__pattern5 (__pattern6 (__pattern7 (__pattern8 (__pattern9 (__pattern10 (__pattern11 (__pattern12 (__pattern13 (__pattern14 __patternFail))))))))))))));
     };
   renderTsTypeDecl = 
     { render = v: 
@@ -31946,10 +31965,19 @@ let
                 let
                   name = v.__field0;
                   t = v.__field1;
+                  exp = v.__field2;
                 in
-                  module."Data.Semigroup".append module."Data.Semigroup".semigroupString "type " (module."Data.Semigroup".append module."Data.Semigroup".semigroupString name (module."Data.Semigroup".append module."Data.Semigroup".semigroupString " = " (render renderTsType t)))
+                  module."Data.Semigroup".append module."Data.Semigroup".semigroupString 
+                  ( 
+                    let
+                      __pattern0 = __fail: if exp then "export " else __fail;
+                      __pattern1 = __fail: "";
+                      __patternFail = builtins.throw "Pattern match failure in src/TS.purs at 136:8 - 136:37";
+                    in
+                      __pattern0 (__pattern1 __patternFail)
+                  ) (module."Data.Semigroup".append module."Data.Semigroup".semigroupString "type " (module."Data.Semigroup".append module."Data.Semigroup".semigroupString name (module."Data.Semigroup".append module."Data.Semigroup".semigroupString " = " (render renderTsType t))))
               else __fail;
-          __patternFail = builtins.throw "Pattern match failure in src/TS.purs at 133:12 - 134:56";
+          __patternFail = builtins.throw "Pattern match failure in src/TS.purs at 134:12 - 140:20";
         in
           __pattern0 __patternFail;
     };
@@ -31962,7 +31990,7 @@ let
             in
               module."Data.Function".apply (module."Data.Array".intercalate module."Data.Monoid".monoidString "
 ") (module."Data.Functor".map module."Data.Functor".functorArray (render renderTsTypeDecl) ds);
-          __patternFail = builtins.throw "Pattern match failure in src/TS.purs at 129:12 - 130:49";
+          __patternFail = builtins.throw "Pattern match failure in src/TS.purs at 130:12 - 131:49";
         in
           __pattern0 __patternFail;
     };
@@ -31982,7 +32010,7 @@ let
           v = dict;
         in
           v.bar;
-      __patternFail = builtins.throw "Pattern match failure in src/TS.purs at 81:3 - 81:27";
+      __patternFail = builtins.throw "Pattern match failure in src/TS.purs at 82:3 - 82:27";
     in
       __pattern0 __patternFail;
   genericToTsType = dictGeneric: dictFoo: x: bar dictFoo module."Type.Proxy".Proxy;
@@ -31990,7 +32018,7 @@ let
   arg = dictToTsType: {bar = v: Void;};
   tuple = dictToTsType: dictToTsType1: {toTsType = x: genericToTsType module."Data.Tuple".genericTuple (noConstr {reflectSymbol = __unused: "Tuple";} (prod (arg dictToTsType) (arg dictToTsType1))) x;};
 in
-  {inherit bar render toTsType toTsTypeRl Boolean Number String Array Tuple Unknown Any Void Null Undefined Never Object Record Function Type TsDoc genericToTsType boolean number int string unit object array record tuple noC sum noConstr noArgs prod arg toTsTypeRLNil toTsTypeRLCons renderTsDoc renderTsTypeDecl renderTsType;}
+  {inherit bar render toTsType toTsTypeRl Boolean Number String Array Tuple Unknown Any Void Null Undefined Never Object Record Function Id Type TsDoc genericToTsType boolean number int string unit object array record tuple noC sum noConstr noArgs prod arg toTsTypeRLNil toTsTypeRLCons renderTsDoc renderTsTypeDecl renderTsType;}
 ;
 
 Test-Main_default-nix = 
@@ -32105,6 +32133,7 @@ let
   module = 
     { "Data.Function" = Data-Function_default-nix;
       "Data.Generic.Rep" = Data-Generic-Rep_default-nix;
+      "Data.Newtype" = Data-Newtype_default-nix;
       "Data.Show.Generic" = Data-Show-Generic_default-nix;
       "Data.Symbol" = Data-Symbol_default-nix;
       "DoctorNix" = DoctorNix_default-nix;
@@ -32118,7 +32147,8 @@ let
     };
   foreign = Test-Miraculix-Nix-Docs_foreign-nix;
   toJSON = foreign.toJSON;
-  tsTypes = module."Data.Function".apply (module."TS".render module."TS".renderTsDoc) [(module."TS".Type "Docs" (module."TS".toTsType (module."TS".record module."Prim".undefined (module."TS".toTsTypeRLCons (module."TS".toTsTypeRLCons (module."TS".toTsTypeRLCons module."TS".toTsTypeRLNil (module."TS".array (module."TS".record module."Prim".undefined (module."TS".toTsTypeRLCons (module."TS".toTsTypeRLCons (module."TS".toTsTypeRLCons module."TS".toTsTypeRLNil module."DoctorNix".toTsType {reflectSymbol = __unused: "type_";}) module."TS".string {reflectSymbol = __unused: "name";}) module."TS".string {reflectSymbol = __unused: "descr";}))) {reflectSymbol = __unused: "types";}) module."TS".string {reflectSymbol = __unused: "title";}) (module."TS".array (module."TS".record module."Prim".undefined (module."TS".toTsTypeRLCons (module."TS".toTsTypeRLCons (module."TS".toTsTypeRLCons module."TS".toTsTypeRLNil module."DoctorNix".toTsType {reflectSymbol = __unused: "type_";}) module."TS".string {reflectSymbol = __unused: "name";}) module."TS".string {reflectSymbol = __unused: "descr";}))) {reflectSymbol = __unused: "defs";})) module."Type.Proxy".Proxy))];
+  tsTypes = module."Data.Function".apply (module."TS".render module."TS".renderTsDoc) [(module."TS".Type "NixDocs" (module."TS".toTsType (module."TS".record module."Prim".undefined (module."TS".toTsTypeRLCons (module."TS".toTsTypeRLCons (module."TS".toTsTypeRLCons module."TS".toTsTypeRLNil (module."TS".array module."DoctorNix".toTsTypeNixTypeDoc) {reflectSymbol = __unused: "types";}) module."TS".string {reflectSymbol = __unused: "title";}) (module."TS".array module."DoctorNix".toTsTypeNixDefDoc) {reflectSymbol = __unused: "defs";})) module."Type.Proxy".Proxy) true)
+    (module."TS".Type "NixDefDoc" (module."TS".toTsType (module."TS".record module."Prim".undefined (module."TS".toTsTypeRLCons (module."TS".toTsTypeRLCons (module."TS".toTsTypeRLCons module."TS".toTsTypeRLNil module."DoctorNix".toTsType {reflectSymbol = __unused: "type_";}) module."TS".string {reflectSymbol = __unused: "name";}) module."TS".string {reflectSymbol = __unused: "descr";})) ((dictNewtype: module."Type.Proxy".Proxy) module."Prim".undefined)) true)];
   docs = 
     { title = "miraculix";
       types = 

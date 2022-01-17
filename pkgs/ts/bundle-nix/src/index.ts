@@ -2,9 +2,9 @@ import * as fs from "fs-extra";
 import { join, dirname } from "path";
 import * as glob from "glob";
 
-const INPUT_DIR = join(__dirname, "../../../output");
+const INPUT_DIR = join(__dirname, "../../../../output");
 
-const OUTPUT_FILE = join(__dirname, "../../../materialized/bundle.nix");
+const OUTPUT_FILE = join(__dirname, "../../../../materialized/bundle.nix");
 
 type Path = string;
 

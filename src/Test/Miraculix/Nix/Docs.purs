@@ -7,6 +7,7 @@ module Test.Miraculix.Nix.Docs
 import DoctorNix
 import Prelude
 import Data.Generic.Rep (class Generic)
+import Data.Newtype (class Newtype)
 import Data.Show.Generic (genericShow)
 import TS (class ToTsType, TsDoc(..), TsType, TsTypeDecl(..), genericToTsType, render, toTsType)
 import Test.Miraculix.Nix as N
@@ -16,25 +17,34 @@ docs :: NixDocs
 docs =
   { title: "miraculix"
   , types:
-      [ { name: "Assertion"
-        , descr: "..."
-        , type_: toNixType' (Proxy :: _ N.Assertion)
-        }
+      [ NixTypeDoc
+          { name: "Assertion"
+          , descr: "..."
+          , type_: toNixType' (Proxy :: _ N.Assertion)
+          }
       ]
   , defs:
-      [ { name: "assertEq"
-        , descr: "..."
-        , type_: toNixType N.assertEq
-        }
-      , { name: "testCase"
-        , descr: "..."
-        , type_: toNixType N.testCase
-        }
+      [ NixDefDoc
+          { name: "assertEq"
+          , descr: "..."
+          , type_: toNixType N.assertEq
+          }
+      , NixDefDoc
+          { name: "testCase"
+          , descr: "..."
+          , type_: toNixType N.testCase
+          }
       ]
   }
 
 tsTypes :: String
-tsTypes = render $ TsDoc [ Type "Docs" (toTsType (Proxy :: _ NixDocs)) ]
+tsTypes =
+  render
+    $ TsDoc
+        [ Type "NixDocs" (toTsType (Proxy :: _ NixDocs)) true
+        , Type "NixDefDoc" (toTsType (Proxy :: forall a. Newtype NixDefDoc a => _ a)) true
+        , Type "NixTypeDoc" (toTsType (Proxy :: forall a. Newtype NixTypeDoc a => _ a)) true
+        ]
 
 -- docs' =
 --   docGroup "miraculix"

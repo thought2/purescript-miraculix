@@ -3,12 +3,13 @@ module DoctorNix where
 import Prelude
 import Data.Array (fold)
 import Data.Generic.Rep (class Generic)
+import Data.Newtype (class Newtype)
 import Data.Tuple.Nested (type (/\))
 import Foreign (Foreign)
 import Foreign.Object (Object)
 import Foreign.Path (Path)
 import Prim.RowList (class RowToList, RowList)
-import TS (class ToTsType, genericToTsType, toTsType)
+import TS (class ToTsType, genericToTsType, toTsType, TsType(Id))
 import Type.Proxy (Proxy(..))
 import Unsafe.Coerce (unsafeCoerce)
 
@@ -80,10 +81,24 @@ else instance attrs' :: ToNixType a => ToNixType (Object a) where
 instance nixType :: ToNixType NixType where
   toNixType x = x
 
+newtype NixTypeDoc
+  = NixTypeDoc { name :: String, descr :: String, type_ :: NixType }
+
+instance toTsTypeNixTypeDoc :: ToTsType NixTypeDoc where
+  toTsType _ = Id "NixTypeDoc"
+
+newtype NixDefDoc
+  = NixDefDoc { name :: String, descr :: String, type_ :: NixType }
+
+derive instance ntNixDefDoc :: Newtype NixDefDoc _
+
+instance toTsTypeNixDefDoc :: ToTsType NixDefDoc where
+  toTsType _ = Id "NixDefDoc"
+
 type NixDocs
   = { title :: String
-    , types :: Array { name :: String, descr :: String, type_ :: NixType }
-    , defs :: Array { name :: String, descr :: String, type_ :: NixType }
+    , types :: Array NixTypeDoc
+    , defs :: Array NixDefDoc
     }
 
 render :: NixDocs -> String
