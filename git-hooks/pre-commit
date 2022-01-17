@@ -13,4 +13,4 @@ git reset --soft HEAD~1
 
 cd $TMP
 
-tasks ci
+tasks -d ci
