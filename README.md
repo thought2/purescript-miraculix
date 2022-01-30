@@ -60,4 +60,4 @@ If you fix the tests, the derivation can be built. You'll find a report of the s
 
 # miraculix-lite
 
-See [this page](https://github.com/thought2/purescript-miraculix/tree/miraculix-lite) for details.
+See [this page](https://github.com/thought2/purescript-miraculix/tree/lite) for details.
