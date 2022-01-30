@@ -24,6 +24,7 @@
             pkgs.purescript
             pkgs.spago
             pkgs.nodePackages.purescript-psa
+            pkgs.yarn
           ];
         };
       }

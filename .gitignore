@@ -12,3 +12,9 @@ result
 /generated-docs
 /output-miraculix-lite
 yarn-error.log
+/dist
+/dist-newstyle
+.cache/
+public/
+/generated
+/output-miraculix-lite
