@@ -57,3 +57,7 @@ If you fix the tests, the derivation can be built. You'll find a report of the s
 
 - Currently running the test suite does not work yet with `spago test`.
 - For now the library is specialized on unit tests.
+
+# miraculix-lite
+
+See [this page](https://github.com/thought2/purescript-miraculix/tree/miraculix-lite) for details.
